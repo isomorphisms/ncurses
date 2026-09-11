@@ -273,7 +273,9 @@ The test uses bounded input waits so a key-decoding problem fails instead of han
 
 ### Android/Bionic
 
-No Android/Bionic compilation or physical-device execution has been run in this branch yet. Bionic remains an explicit source target, not an accepted device target.
+The `bionic core` workflow now cross-compiles the pruned wide-character core against Android/Bionic at API 24 for both ARMv7a and AArch64.  At exact commit `fb1dd792d66e98ce08c2c91296e8ea4eb7832e0e`, both configure/build jobs succeeded and `llvm-readelf` verified the target machine in `libncursesw.a`.
+
+That is a **built** receipt, not a **tested** or **device-tested** receipt.  No Android emulator and no physical Android device has executed the resulting library yet.
 
 ## Remaining suspicious/historical mechanisms
 

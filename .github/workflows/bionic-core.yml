@@ -1,0 +1,92 @@
+name: bionic core
+
+on:
+  push:
+    branches: [bionic-core]
+  pull_request:
+    branches: [source-first-layout]
+
+jobs:
+  android-bionic-wide:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: armv7a
+            host: arm-linux-androideabi
+            clang_target: armv7a-linux-androideabi
+            elf_machine: ARM
+          - name: aarch64
+            host: aarch64-linux-android
+            clang_target: aarch64-linux-android
+            elf_machine: AArch64
+
+    name: android-bionic-wide (${{ matrix.name }})
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Record Android NDK toolchain
+        shell: bash
+        run: |
+          set -euxo pipefail
+          toolchain="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64"
+          test -x "$toolchain/bin/clang"
+          printf '%s\n' \
+            "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" \
+            "target=${{ matrix.clang_target }}24"
+          "$toolchain/bin/clang" --version
+
+      - name: Configure and build modern core for Bionic
+        working-directory: _
+        shell: bash
+        run: |
+          set -euxo pipefail
+          toolchain="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64"
+
+          export CC="$toolchain/bin/clang --target=${{ matrix.clang_target }}24"
+          export AR="$toolchain/bin/llvm-ar"
+          export RANLIB="$toolchain/bin/llvm-ranlib"
+          export STRIP="$toolchain/bin/llvm-strip"
+
+          # These match the Bionic assumptions used by Termux's ncurses build.
+          export ac_cv_header_locale_h=no
+          export am_cv_langinfo_codeset=no
+          export CPPFLAGS="${CPPFLAGS:-} -fPIC"
+
+          ./configure \
+            --host="${{ matrix.host }}" \
+            --with-build-cc=cc \
+            --without-ada \
+            --without-cxx \
+            --without-cxx-binding \
+            --without-debug \
+            --without-manpages \
+            --without-tests \
+            --disable-stripping \
+            --enable-widec
+
+          make -j2
+
+      - name: Verify archive is for the requested Android architecture
+        working-directory: _
+        shell: bash
+        run: |
+          set -euxo pipefail
+          toolchain="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64"
+          archive=lib/libncursesw.a
+          test -s "$archive"
+          "$toolchain/bin/llvm-readelf" -h "$archive" > ../bionic-elf-headers.txt
+          grep -m1 'Machine:' ../bionic-elf-headers.txt
+          grep -m1 -E "Machine:.*${{ matrix.elf_machine }}" ../bionic-elf-headers.txt
+
+      - name: Record scope
+        run: |
+          printf '%s\n' \
+            'host: GitHub ubuntu-24.04 x86-64' \
+            'target libc: Android Bionic via the Android NDK' \
+            'target ABI: ${{ matrix.name }} / API 24' \
+            'configuration: wide-character pruned ncurses core' \
+            'evidence: configure + complete cross-build + target-architecture archive inspection' \
+            'this is compile evidence only; no Android emulator or physical device executed the library'

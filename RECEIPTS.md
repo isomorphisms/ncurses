@@ -48,6 +48,20 @@ An earlier attempt to use `make -C ncurses test_progs` failed while linking ncur
 
 The first focused pty test incorrectly used separate ptys for input and output.  ncurses initialized terminal modes on the output terminal, leaving the unrelated input pty with unsuitable line discipline; bounded `wgetch` calls returned `ERR`.  The corrected test uses duplicate slave descriptors from one pty, matching an ordinary terminal, and is green.
 
-## Android/Bionic
+## Android/Bionic cross-build
 
-No Android/Bionic compilation and no physical Android device execution has been run for this branch.  Android/Bionic remains an explicit compatibility target, but there is no Android acceptance receipt here.
+`.github/workflows/bionic-core.yml` cross-compiles the same pruned wide-character core with the Android NDK for API 24.  It uses ncurses' native build compiler for build-time source generators while the target compiler and binutils come from the NDK.
+
+The configuration also carries the two Bionic assumptions used by Termux's ncurses recipe:
+
+- `ac_cv_header_locale_h=no`
+- `am_cv_langinfo_codeset=no`
+
+At exact commit `fb1dd792d66e98ce08c2c91296e8ea4eb7832e0e`, both matrix targets completed successfully:
+
+- ARMv7a using `armv7a-linux-androideabi24` with Autoconf host `arm-linux-androideabi`;
+- AArch64 using `aarch64-linux-android24` with Autoconf host `aarch64-linux-android`.
+
+For both targets, configure succeeded, `make -j2` completed, `lib/libncursesw.a` was produced, and `llvm-readelf` verified that the archive contains the requested target machine rather than host x86-64 objects.
+
+This is Bionic **compile evidence only**.  No Android emulator and no physical Android device executed the resulting library, so there is still no Android runtime or device acceptance receipt.

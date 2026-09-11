@@ -117,7 +117,7 @@ Removed from that choice are baud-rate timing, serial padding costs, hard tabs/b
 
 ## Build inputs that actually matter to the current target
 
-The Linux/glibc receipt demonstrates the current small conceptual requirements even though inherited Autoconf is still much larger:
+The Linux/glibc and Android/Bionic receipts demonstrate the current small conceptual requirements even though inherited Autoconf is still much larger:
 
 - C compiler
 - libc/POSIX interfaces
@@ -127,7 +127,7 @@ The Linux/glibc receipt demonstrates the current small conceptual requirements e
 - wide-character libc support including `wcwidth`
 - the `ncurses` and `progs` source modules
 
-Android/Bionic is a target constraint, but no Android build or physical-device acceptance has been run on this branch yet.
+The pruned core now cross-compiles successfully against Android/Bionic for ARMv7a and AArch64 at API 24.  That establishes source/build compatibility for those targets, not Android runtime behavior: no emulator or physical-device execution receipt exists yet.
 
 ## Intentionally retained modern features
 
