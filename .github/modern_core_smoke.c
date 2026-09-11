@@ -116,6 +116,7 @@ main(void)
         result = fail("tty/input mode setup failed");
         goto done;
     }
+    wtimeout(stdscr, 1000);
 
     if (waddstr(stdscr, "modern-core ") == ERR) {
         result = fail("ordinary WINDOW write failed");
@@ -146,7 +147,13 @@ main(void)
     first_key = wgetch(stdscr);
     second_key = wgetch(stdscr);
     if (first_key != KEY_UP || second_key != 'q') {
-        result = fail("wgetch did not decode cursor-up plus ordinary input");
+        fprintf(stderr,
+                "modern-core smoke: decoded first=%d second=%d expected KEY_UP=%d and q=%d\n",
+                first_key,
+                second_key,
+                KEY_UP,
+                'q');
+        result = EXIT_FAILURE;
         goto done;
     }
 
