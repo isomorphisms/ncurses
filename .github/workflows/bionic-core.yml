@@ -2,91 +2,67 @@ name: bionic core
 
 on:
   push:
-    branches: [bionic-core]
+    branches: [source-first-layout]
   pull_request:
     branches: [source-first-layout]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   android-bionic-wide:
-    runs-on: ubuntu-24.04
+    # Never execute a fork's proposed code on a self-hosted runner.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux, debian]
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - name: armv7a
-            host: arm-linux-androideabi
-            clang_target: armv7a-linux-androideabi
-            elf_machine: ARM
-          - name: aarch64
-            host: aarch64-linux-android
-            clang_target: aarch64-linux-android
-            elf_machine: AArch64
-
-    name: android-bionic-wide (${{ matrix.name }})
-
+        abi: [armv7a, aarch64]
+    name: android-bionic-wide (${{ matrix.abi }})
+    env:
+      EXPECTED_NDK_REVISION: 27.3.13750724
     steps:
+      - name: Verify Debian execution environment
+        shell: bash
+        run: |
+          set -eu
+          . /etc/os-release
+          test "$ID" = debian
+          for program in cc make awk git tic python3 sha256sum; do
+            command -v "$program"
+          done
+          # Runner provisioning must supply this exact NDK; do not substitute
+          # an Ubuntu runner or silently download a different toolchain.
+          test -n "${ANDROID_NDK_HOME:-}"
+          test -f "$ANDROID_NDK_HOME/source.properties"
+
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
 
-      - name: Record Android NDK toolchain
+      - name: Cross-build and link the pruned-core PTY bundle
         shell: bash
-        run: |
-          set -euxo pipefail
-          toolchain="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64"
-          test -x "$toolchain/bin/clang"
-          printf '%s\n' \
-            "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" \
-            "target=${{ matrix.clang_target }}24"
-          "$toolchain/bin/clang" --version
+        run: bash .github/build_bionic_smoke.sh '${{ matrix.abi }}'
 
-      - name: Configure and build modern core for Bionic
-        working-directory: _
-        shell: bash
-        run: |
-          set -euxo pipefail
-          toolchain="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64"
+      - name: Retain bundle and build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bionic-api24-${{ matrix.abi }}-${{ github.run_id }}
+          path: |
+            _/bionic-validation/${{ matrix.abi }}/bundle/
+            _/bionic-validation/${{ matrix.abi }}/*.txt
+            _/bionic-validation/${{ matrix.abi }}/*.log
+            _/bionic-validation/${{ matrix.abi }}/link.map
+            _/bionic-validation/${{ matrix.abi }}/build/config.log
+          if-no-files-found: warn
 
-          export CC="$toolchain/bin/clang --target=${{ matrix.clang_target }}24"
-          export AR="$toolchain/bin/llvm-ar"
-          export RANLIB="$toolchain/bin/llvm-ranlib"
-          export STRIP="$toolchain/bin/llvm-strip"
-
-          # These match the Bionic assumptions used by Termux's ncurses build.
-          export ac_cv_header_locale_h=no
-          export am_cv_langinfo_codeset=no
-          export CPPFLAGS="${CPPFLAGS:-} -fPIC"
-
-          ./configure \
-            --host="${{ matrix.host }}" \
-            --with-build-cc=cc \
-            --without-ada \
-            --without-cxx \
-            --without-cxx-binding \
-            --without-debug \
-            --without-manpages \
-            --without-tests \
-            --disable-stripping \
-            --enable-widec
-
-          make -j2
-
-      - name: Verify archive is for the requested Android architecture
-        working-directory: _
-        shell: bash
-        run: |
-          set -euxo pipefail
-          toolchain="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64"
-          archive=lib/libncursesw.a
-          test -s "$archive"
-          "$toolchain/bin/llvm-readelf" -h "$archive" > ../bionic-elf-headers.txt
-          grep -m1 'Machine:' ../bionic-elf-headers.txt
-          grep -m1 -E "Machine:.*${{ matrix.elf_machine }}" ../bionic-elf-headers.txt
-
-      - name: Record scope
+      - name: Record acceptance boundary
         run: |
           printf '%s\n' \
-            'host: GitHub ubuntu-24.04 x86-64' \
-            'target libc: Android Bionic via the Android NDK' \
-            'target ABI: ${{ matrix.name }} / API 24' \
-            'configuration: wide-character pruned ncurses core' \
-            'evidence: configure + complete cross-build + target-architecture archive inspection' \
-            'this is compile evidence only; no Android emulator or physical device executed the library'
+            'evidence: Bionic configure/build, PTY executable link, ELF checks, checksummed bundle' \
+            'Android runtime: NOT RUN by this job' \
+            'physical-device acceptance: NOT ESTABLISHED'
