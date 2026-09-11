@@ -3,7 +3,7 @@
 -- Copyright 1998,2006 Free Software Foundation, Inc.                        --
 --                                                                           --
 -- Permission is hereby granted, free of charge, to any person obtaining a   --
--- copy of this software and associated documentation files (the             --
+-- copy of this software and associated documentation files (the            --
 -- "Software"), to deal in the Software without restriction, including       --
 -- without limitation the rights to use, copy, modify, merge, publish,       --
 -- distribute, distribute with modifications, sublicense, and/or sell copies --
@@ -146,12 +146,19 @@ During doupdate(), the tty code calls the cursor-movement machinery when it
 needs the physical terminal cursor at a particular location before emitting
 text or another terminal operation.
 
-lib_mvcur.c therefore sits underneath screen updating.  Given an old physical
-cursor position and a required new one, it considers terminal capabilities such
-as absolute cursor addressing and relative up/down/left/right movement and
-chooses a sequence to emit.  Much of its complexity is historical optimization
-for terminals where different movement sequences had materially different
-transmission costs.
+On this modern-core branch, lib_mvcur.c has deliberately been reduced to the
+part of that job that still matters on an ordinary pty or terminal emulator.
+Given an old physical cursor position and a required new one, it constructs an
+absolute cursor-address sequence when the terminal supplies one and an
+ordinary relative up/down/left/right route when that is possible.  It compares
+the number of bytes those routes would emit and uses the shorter route.
+
+The upstream implementation also priced movement by baud rate and terminal
+padding and tried hard tabs/back-tabs, memory-relative addressing, home and
+lower-left shortcuts, carriage-return strategies, text-overwrite movement,
+and an auto-left-margin wrap trick.  Those historical strategies are removed
+here; repository history retains them for archaeology.  See PRUNING.md and
+ARCHITECTURE.md for the subtraction record and the surviving path.
 
 So, in context:
 

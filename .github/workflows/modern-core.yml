@@ -1,0 +1,53 @@
+name: modern core
+
+on:
+  push:
+    branches: [prune-modern-core]
+  pull_request:
+    branches: [source-first-layout]
+
+jobs:
+  linux-glibc-wide:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure modern core
+        working-directory: _
+        run: |
+          ./configure \
+            --without-ada \
+            --without-cxx \
+            --without-cxx-binding \
+            --without-debug \
+            --without-manpages \
+            --without-tests \
+            --enable-widec
+
+      - name: Build modern core
+        working-directory: _
+        run: make -j2
+
+      - name: Build modern-core pty smoke test
+        working-directory: _
+        run: |
+          gcc \
+            -D_DEFAULT_SOURCE -D_XOPEN_SOURCE=600 \
+            -Iinclude \
+            ../.github/modern_core_smoke.c \
+            -Llib -lncursesw -lutil \
+            -o ../modern_core_smoke
+
+      - name: Exercise output input wide characters and resize
+        env:
+          LC_ALL: C.UTF-8
+          TERM: xterm-256color
+        run: ./modern_core_smoke
+
+      - name: Record scope
+        run: |
+          printf '%s\n' \
+            'host: GitHub ubuntu-latest (glibc)' \
+            'configuration: wide-character ncurses core; Ada/C++ bindings/manpages/full test tree disabled' \
+            'exercised: WINDOW write, wide character, refresh/doupdate terminal output, wgetch key decoding, resize state' \
+            'this is not Android/Bionic device acceptance'
