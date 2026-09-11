@@ -6,8 +6,9 @@
  * and
  *   terminal key sequence -> wgetch -> KEY_* event.
  *
- * The test uses two ptys so terminal output can be captured independently
- * from bytes injected as terminal input.  It is not Android device evidence.
+ * One pty backs both input and output, matching an ordinary terminal.  The
+ * master side injects input and later captures terminal output.  This is not
+ * Android device evidence.
  */
 #define _XOPEN_SOURCE 600
 #define _XOPEN_SOURCE_EXTENDED 1
@@ -32,9 +33,10 @@ fail(const char *message)
 }
 
 static int
-open_terminal_pair(int *master, FILE **slave_stream, const char *mode)
+open_terminal_pair(int *master, FILE **input, FILE **output)
 {
     int slave;
+    int input_fd;
     struct winsize size;
 
     memset(&size, 0, sizeof(size));
@@ -44,9 +46,24 @@ open_terminal_pair(int *master, FILE **slave_stream, const char *mode)
     if (openpty(master, &slave, NULL, NULL, &size) < 0)
         return -1;
 
-    *slave_stream = fdopen(slave, mode);
-    if (*slave_stream == NULL) {
+    input_fd = dup(slave);
+    if (input_fd < 0) {
         close(slave);
+        close(*master);
+        return -1;
+    }
+
+    *input = fdopen(input_fd, "r");
+    *output = fdopen(slave, "w");
+    if (*input == NULL || *output == NULL) {
+        if (*input != NULL)
+            fclose(*input);
+        else
+            close(input_fd);
+        if (*output != NULL)
+            fclose(*output);
+        else
+            close(slave);
         close(*master);
         return -1;
     }
@@ -82,8 +99,7 @@ captured_output_contains(int master, const char *needle)
 int
 main(void)
 {
-    int input_master = -1;
-    int output_master = -1;
+    int master = -1;
     FILE *input = NULL;
     FILE *output = NULL;
     SCREEN *screen = NULL;
@@ -97,13 +113,8 @@ main(void)
     if (setlocale(LC_ALL, "") == NULL)
         return fail("could not establish locale");
 
-    if (open_terminal_pair(&input_master, &input, "r") < 0)
-        return fail("could not create input pty");
-    if (open_terminal_pair(&output_master, &output, "w") < 0) {
-        fclose(input);
-        close(input_master);
-        return fail("could not create output pty");
-    }
+    if (open_terminal_pair(&master, &input, &output) < 0)
+        return fail("could not create terminal pty");
 
     screen = newterm("xterm-256color", output, input);
     if (screen == NULL) {
@@ -131,15 +142,16 @@ main(void)
         result = fail("refresh/doupdate path failed");
         goto done;
     }
+    fflush(output);
 
     cursor_up_key = tigetstr("kcuu1");
     if (cursor_up_key == NULL || cursor_up_key == (char *) -1) {
         result = fail("xterm cursor-up key capability unavailable");
         goto done;
     }
-    if (write(input_master, cursor_up_key, strlen(cursor_up_key))
+    if (write(master, cursor_up_key, strlen(cursor_up_key))
             != (ssize_t) strlen(cursor_up_key)
-        || write(input_master, "q", 1) != 1) {
+        || write(master, "q", 1) != 1) {
         result = fail("could not inject terminal input");
         goto done;
     }
@@ -168,7 +180,7 @@ main(void)
     }
     fflush(output);
 
-    if (!captured_output_contains(output_master, "modern-core")) {
+    if (!captured_output_contains(master, "modern-core")) {
         result = fail("terminal output did not contain painted WINDOW text");
         goto done;
     }
@@ -182,9 +194,7 @@ done:
         fclose(input);
     if (output != NULL)
         fclose(output);
-    if (input_master >= 0)
-        close(input_master);
-    if (output_master >= 0)
-        close(output_master);
+    if (master >= 0)
+        close(master);
     return result;
 }
