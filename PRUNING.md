@@ -1,6 +1,6 @@
 # Pruning ncurses toward a readable modern core
 
-This is an archaeology branch between upstream ncurses and a later clean-sheet icurses.  The method is subtraction: keep the modern terminal model visible, remove support for worlds outside the target, and record what each removed mechanism used to solve.
+This is an archaeology branch between upstream ncurses and a later clean-sheet icurses. The method is subtraction: keep the modern terminal model visible, remove support for worlds outside the target, and record what each removed mechanism used to solve.
 
 ## Target
 
@@ -29,7 +29,7 @@ Do not infer Android device acceptance from source inspection or a host build.
 
 **Replacement:** none; the C API/implementation remains.
 
-**Inspection:** both were independent top-level modules.  Their stale configure branches are retired during build-world narrowing.
+**Inspection:** both were independent top-level modules. Their stale configure branches are retired during build-world narrowing.
 
 **Archaeology:** history for `Ada95/`, `c++/`, their Makefiles and configure paths.
 
@@ -55,15 +55,15 @@ Do not infer Android device acceptance from source inspection or a host build.
 
 **Why outside target:** Linux/glibc and Android/Bionic use the Unix tty + escape-sequence path.
 
-**Replacement:** the surviving Unix path is `tinfo_driver.c`, termios/tty handling, `tty_update`, `mvcur`, and terminal sequences selected through terminfo.
+**Replacement:** `tinfo_driver.c`, termios/tty handling, `tty_update`, `mvcur`, and terminal sequences selected through terminfo.
 
-**Inspection:** runtime backend code was physically isolated. `ncurses/Makefile.in` still names `nc_win32.h` and a `win32con` source directory; that compatibility header and stale generated-build references are deliberately removed with the build-world pass rather than hidden in this source deletion.
+**Inspection:** runtime backend code was isolated. `ncurses/Makefile.in` still names `nc_win32.h` and a `win32con` source directory; the header and stale build references remain explicit Phase-3 debt.
 
 **Archaeology:** history for `ncurses/win32con/*`, `ncurses/tinfo/lib_win32*.c`, `include/nc_*mingw.h`, `include/win32_curses.h`, `include/nc_win32.h`.
 
 ### OS/2 and EMX
 
-**Removed:** `Makefile.os2`, `README.emx`, `misc/emx.src`, the REXX `.cmd` scripts, and OS/2 DLL `.def/.ref` export tables for ncurses/form/menu/panel.
+**Removed:** `Makefile.os2`, `README.emx`, `misc/emx.src`, REXX `.cmd` scripts, and OS/2 DLL `.def/.ref` export tables for ncurses/form/menu/panel.
 
 **Original problem:** configure/build ncurses in EMX, manufacture OS/2 DLL/import libraries and ordinal export tables, install an EMX terminal database, and create an OS/2 binary distribution.
 
@@ -77,25 +77,56 @@ Do not infer Android device acceptance from source inspection or a host build.
 
 ### Phase-1 validation state
 
-Source ownership was inspected before each deletion.  No build receipt is claimed yet: the inherited Autoconf/Makefile world still contains references to deleted targets.  Those references are now dead build branches and must be removed before the branch is called build-consistent.
+Source ownership was inspected before each deletion. No build receipt is claimed yet: inherited Autoconf/Makefile code still contains references to deleted targets. Those references are dead build branches and must be removed before the branch is called build-consistent.
 
 ## Phase 2 — packaging and release engineering
 
 ### Upstream/downstream distribution machinery
 
-**Removed:** `_/package`, `_/test/package`, imported downstream patch directory `_/m`, release announcement templates/metadata (`ANNOUNCE`, `announce.html.in`, `MANIFEST`, `dist.mk`), and `test/make-tar.sh`.
+**Removed:** `_/package`, `_/test/package`, imported downstream patch directory `_/m`, release announcement/metadata (`ANNOUNCE`, `announce.html.in`, `MANIFEST`, `dist.mk`), and `test/make-tar.sh`.
 
-**Original problem:** describe distro packages, carry downstream packaging recipes/patches, construct release archives and announcements, and exercise tarball packaging.
+**Original problem:** describe distro packages, carry downstream recipes/patches, construct release archives/announcements, and test tarball packaging.
 
-**Why outside target:** none of this participates in WINDOW state, terminfo, tty input/output, screen diffing or terminal painting.  The branch is a source archaeology tree, not an ncurses distribution factory.
+**Why outside target:** none participates in WINDOW state, terminfo, tty input/output, screen diffing or terminal painting.
 
-**Replacement:** none. Repository history remains the source for upstream packaging archaeology.
+**Replacement:** none. Repository history remains available for packaging archaeology.
 
-**Inspection:** the removed trees/files are package specs, distro installers/recipes, imported patch payloads, release manifests/announcement material, and tarball tooling.  Core `COPYING`, `AUTHORS`, `NEWS`, source documentation and ordinary test programs remain.
+**Inspection:** removed content is package specs, installers/recipes, patch payloads, release manifests/announcement material, and tarball tooling. Core `COPYING`, `AUTHORS`, `NEWS`, source documentation and ordinary tests remain.
 
 **Archaeology:** history for `package/`, `test/package/`, `m/`, `ANNOUNCE`, `announce.html.in`, `MANIFEST`, `dist.mk`, `test/make-tar.sh`.
 
-**Validation:** file-role inspection only; this deletion does not claim a build or runtime test.
+**Validation:** file-role inspection only; no build/runtime claim.
+
+## Phase 3 — narrow the platform/build world
+
+### Proprietary-platform capability tables
+
+**Removed:** `include/Caps.aix4`, `Caps.hpux11`, `Caps.osf1r5`, and `Caps.uwin`.
+
+**Original problem:** carry alternative terminfo capability-name/ordering tables chosen to match AIX 4, HP-UX 11, OSF/1 V5, and UWIN conventions rather than ncurses' ordinary capability tables.
+
+**Why outside target:** those operating systems/environment are explicitly outside this branch. The modern core retains `include/Caps` and `include/Caps-ncurses`, plus `Caps.keys` while keyboard capability generation remains under study.
+
+**Replacement:** the normal ncurses capability table path.
+
+**Inspection:** these are parallel platform-specific variants in `include/`, not runtime implementations required by Linux/glibc or Android/Bionic.
+
+**Archaeology:** history for `include/Caps.{aix4,hpux11,osf1r5,uwin}` and the configure `--with-caps` selection machinery.
+
+### Build/configuration debt exposed by the audit
+
+The inherited active build still contains all of the following despite the source cuts:
+
+- Ada compiler/binding probing and output substitutions
+- C++ binding configuration and old C++ compiler workarounds
+- unconditional `panel menu form` addition to `modules_to_build`
+- MinGW term-driver/library branches
+- OS/2 terminfo and libtool branches
+- Solaris/proprietary-platform compiler workarounds
+- `nc_win32.h` in `ncurses/Makefile.in` dependencies
+- generated `configure` carrying the same historical world as `configure.in`
+
+These are not being counted as supported features. No no-op replacement directories will be added merely to make the old traversal appear healthy.
 
 ## Surviving execution path
 
@@ -107,7 +138,7 @@ Output:
         -> doupdate / tty_update compares newscr with curscr
         -> mvcur positions physical cursor
         -> attributes + character bytes are emitted
-        -> curscr remembers the resulting physical state
+        -> curscr remembers resulting physical state
 
 Input:
 
@@ -117,11 +148,7 @@ Input:
         -> wgetch/getch
         -> application character or key event
 
-The important architectural distinction is between editing in-memory screen state and realizing that state on the terminal.  Pruning must not erase it just to reduce line count.
-
-## Build-world work still pending
-
-Narrow `configure`, `configure.in`, Makefile templates, headers and generated-build machinery to the modern POSIX target. Remove probes/options whose only purpose is deleted bindings/libraries, Windows/OS2, ancient proprietary Unix or obsolete compilers. Identify the eventual small build inputs: compiler, POSIX/libc, termios/tty, terminfo, wide characters and source lists.
+The central distinction is between editing in-memory screen state and realizing it on the terminal.
 
 ## Later candidates requiring mechanism-level inspection
 
