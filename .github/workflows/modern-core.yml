@@ -1,0 +1,40 @@
+name: modern core
+
+on:
+  push:
+    branches: [prune-modern-core]
+  pull_request:
+    branches: [source-first-layout]
+
+jobs:
+  linux-glibc-wide:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure modern core
+        working-directory: _
+        run: |
+          ./configure \
+            --without-ada \
+            --without-cxx \
+            --without-cxx-binding \
+            --without-debug \
+            --without-manpages \
+            --without-tests \
+            --enable-widec
+
+      - name: Build modern core
+        working-directory: _
+        run: make -j2
+
+      - name: Build focused ncurses test programs
+        working-directory: _
+        run: make -C ncurses test_progs
+
+      - name: Record scope
+        run: |
+          printf '%s\n' \
+            'host: GitHub ubuntu-latest (glibc)' \
+            'configuration: wide-character ncurses core; Ada/C++ bindings/manpages/full test tree disabled' \
+            'this is not Android/Bionic device acceptance'
