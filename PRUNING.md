@@ -62,9 +62,27 @@ Archaeology: `ncurses/win32con/win32_driver.c`, `ncurses/win32con/win_driver.c`,
 
 Validation: source ownership and the Unix-vs-Windows backend split were inspected. No build receipt is claimed at this commit; the inherited build still contains references scheduled for the Phase 3 cleanup.
 
-### Phase 1d: OS/2 support still to remove
+### Phase 1d: OS/2 and EMX support removed
 
-Next cut: the OS/2/EMX build files, terminal data and command scripts, followed by their stale configure/build references. Packaging copies of MinGW support are handled with the packaging/release-engineering phase rather than counted as runtime backend code.
+Removed `Makefile.os2`, `README.emx`, the EMX-specific terminfo source, the REXX `.cmd` scripts used to manufacture/check DLL exports, and the form/menu/panel/ncurses `.def`/`.ref` export-table files owned by that build path.
+
+What it solved: ncurses carried a wrapper build for the OS/2 EMX environment. It regenerated an EMX-compatible configure script, built OS/2 DLL/import libraries, maintained ordinal export tables, installed an EMX-specific terminal database, and could construct a binary OS/2 distribution.
+
+Why it is gone here: OS/2 and EMX are outside the Linux/Bionic/POSIX-pty target. The export-table and REXX machinery has no role in the surviving Unix terminal execution path.
+
+Replacement: none. The ordinary POSIX compiler/libc/termios build path is the only platform model retained.
+
+Inspection: `Makefile.os2` directly references `misc/emx.src`, `misc/makedef.cmd`, `misc/chkdef.cmd`, `misc/cleantic.cmd` and the `.def/.ref` files; its own comments and targets describe OS/2 DLLs, EMX installation and `os2dist`. The removed files form a self-contained platform/release family rather than shared curses runtime code.
+
+Archaeology: `Makefile.os2`, `README.emx`, `misc/emx.src`, `misc/*.cmd`, and `misc/{ncurses,form,menu,panel}.{def,ref}` in repository history.
+
+Validation: ownership and references were inspected. No OS/2 build is retained or claimed.
+
+### Phase 1e: stale build/configuration references still to remove
+
+The runtime/source families above are gone. The inherited Autoconf and Makefile templates still contain options, probes and dependency names for deleted bindings, libraries and Windows support. Those are now dead build-world branches, not supported compatibility. They are removed in the build narrowing pass before a Phase-1/3 build receipt is claimed.
+
+Packaging copies of MinGW support are handled with the packaging/release-engineering phase rather than counted as runtime backend code.
 
 ### Core path being preserved while pruning
 
