@@ -34,3 +34,175 @@ of ncurses.
 
 As a rule, these modules should not depend directly on term.h references and
 associated terminfo function and variables.
+
+
+A FIRST TOUR: WHAT THESE FILES DO IN THE RUNNING PROGRAM
+========================================================
+
+The easiest way to understand this directory is not as a collection of
+independent functions, but as one path from an application's idea of a screen
+to the real terminal, plus the reverse path for keyboard input.
+
+A typical output path is:
+
+    newwin()
+        -> waddch(), waddstr(), etc.
+        -> wrefresh()
+        -> wnoutrefresh()
+        -> doupdate()
+        -> terminal cursor movement and character output
+
+The important distinction is that most of the "base" routines operate on an
+in-memory WINDOW.  They are not immediately writing escape sequences to the
+terminal.
+
+WINDOW, newwin(), and lib_newwin.c
+----------------------------------
+
+A WINDOW is an in-memory rectangular grid of screen cells plus bookkeeping:
+its size, its position on the screen, its current logical cursor position,
+attributes, background, scrolling region, and which cells have changed.
+
+newwin(lines, columns, y, x) creates one of these rectangles.  It allocates the
+cell storage and initially fills it with blank cells.  Creating a window does
+not make anything appear on the terminal.
+
+subwin() and derwin() create views into another window.  Unlike a completely
+new window, a derived/subwindow can share the parent's cell storage.
+
+So "new window" means "make a new editable screen buffer/rectangle", not
+"open a new operating-system or graphical window".
+
+
+addch, waddch(), and lib_addch.c
+-------------------------------
+
+"add character" means "put a character into a WINDOW at that window's logical
+cursor position".
+
+waddch(win, ch) is a central mutation operation.  It combines the character
+with the window's current attributes/background, stores the resulting cell in
+the window, advances or wraps the window cursor, handles scrolling when
+needed, and marks the affected part of the window as changed.
+
+It does not normally mean "write this byte to the terminal right now".
+Much of the higher-level text-output API eventually reduces to operations like
+waddch().
+
+The initial `w` means that the operation takes an explicit WINDOW.  The plain
+forms such as addch() conventionally operate on stdscr, the default window.
+
+
+refresh, wrefresh(), wnoutrefresh(), and lib_refresh.c
+------------------------------------------------------
+
+A WINDOW can be edited many times before any terminal output occurs.
+Refreshing is the bridge from those private window buffers toward the complete
+screen image.
+
+wnoutrefresh(win) copies the changed parts of a WINDOW into ncurses' desired
+whole-screen image, called newscr.  This still does not necessarily perform
+physical output.
+
+wrefresh(win) normally performs that merge and then calls doupdate().
+This separation lets several windows be merged into newscr first and then sent
+to the terminal in one update.
+
+The useful mental model is:
+
+    WINDOW      = one application's rectangular view/buffer
+    newscr      = what ncurses wants the whole terminal to look like
+    curscr      = what ncurses believes the physical terminal looks like now
+
+
+doupdate() and tty_update.c
+---------------------------
+
+The tty layer is where the abstract screen becomes terminal I/O.  "tty" is the
+traditional Unix name for a terminal device; here it means the backend that
+has to deal with the behavior of an actual terminal rather than merely editing
+a WINDOW.
+
+doupdate() compares newscr, the desired whole-screen image, with curscr, the
+remembered current physical image.  It works out what has changed and emits the
+terminal operations needed to make the real display match newscr.  Physical
+screen output is concentrated in tty_update.c (apart from the lower-level
+character-output helper used by tputs()).
+
+This is why waddch() and doupdate() are very different operations even though
+both ultimately contribute to putting a character on the display: waddch()
+changes the desired data; doupdate() realizes those changes on the device.
+
+
+mvcur and lib_mvcur.c
+---------------------
+
+"mvcur" means "move the physical terminal cursor".
+
+It is easy to confuse this with changing a WINDOW's logical cursor.  They are
+not the same thing.  A WINDOW may say that its next character belongs at row 7,
+column 20 while the terminal's real cursor is currently somewhere else.
+During doupdate(), the tty code calls the cursor-movement machinery when it
+needs the physical terminal cursor at a particular location before emitting
+text or another terminal operation.
+
+lib_mvcur.c therefore sits underneath screen updating.  Given an old physical
+cursor position and a required new one, it considers terminal capabilities such
+as absolute cursor addressing and relative up/down/left/right movement and
+chooses a sequence to emit.  Much of its complexity is historical optimization
+for terminals where different movement sequences had materially different
+transmission costs.
+
+So, in context:
+
+    move()/wmove()     changes a WINDOW's logical cursor
+    mvcur()            moves the real terminal cursor while painting
+
+Those names sound similar but belong to different layers.
+
+
+getch, wgetch(), and lib_getch.c
+--------------------------------
+
+"get character" is the main input path, but it does substantially more than a
+single read() of one byte.
+
+wgetch(win) obtains the next input event associated with a curses window.  If
+the window has pending visible changes, ncurses refreshes it before waiting for
+input.  It then reads from the screen's input file descriptor, buffers bytes,
+applies the requested blocking/timeout behavior, and, when keypad processing
+is enabled, recognizes multi-byte terminal escape sequences and converts them
+into curses key values such as arrow/function-key codes.
+
+It also participates in mouse-event handling, resize handling, echo behavior,
+and cooked/raw/cbreak input modes.
+
+The contextual path is therefore approximately:
+
+    terminal bytes/events
+        -> input FIFO
+        -> escape-sequence/key recognition
+        -> wgetch()/getch() result for the application
+
+Again, the initial `w` means an explicit WINDOW.  getch() is the default-window
+form.
+
+
+How the pieces fit together
+---------------------------
+
+For a small curses program, think of the cycle as:
+
+    1. newwin() creates an editable rectangular buffer.
+    2. waddch()/waddstr()/etc. change that buffer.
+    3. wrefresh() merges its changes into the desired whole screen.
+    4. doupdate() compares desired screen state with remembered physical state.
+    5. mvcur() and related tty routines position the real cursor and emit the
+       required terminal sequences and character data.
+    6. wgetch() refreshes if necessary, waits for terminal input, decodes it,
+       and returns an application-level character or key event.
+    7. The program edits its WINDOWs in response, and the cycle repeats.
+
+This distinction between "edit an in-memory screen" and "make the physical
+terminal match it" is the central idea to keep in mind while reading the
+source.
