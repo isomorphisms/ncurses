@@ -1,124 +1,142 @@
 # Pruning ncurses toward a readable modern core
 
-This branch is an archaeology branch between upstream ncurses and a later clean-sheet icurses. The goal is to learn the implementation by subtraction: keep the modern terminal model visible, remove support for worlds we are not targeting, and leave enough explanation that the next reader can tell what used to be here and why it disappeared.
+This is an archaeology branch between upstream ncurses and a later clean-sheet icurses.  The method is subtraction: keep the modern terminal model visible, remove support for worlds outside the target, and record what each removed mechanism used to solve.
 
 ## Target
 
-Keep the implementation aimed at ordinary modern Unix/POSIX terminals, especially Linux/glibc and Android/Bionic, ordinary ptys and terminal emulators, UTF-8/wide characters, windows and pads, colors/attributes, resizing, tty modes, keyboard escape-sequence decoding, and terminfo while it remains useful evidence.
+Keep ordinary modern Unix/POSIX terminals, especially Linux/glibc and Android/Bionic, ptys and terminal emulators, UTF-8/wide characters, WINDOW/subwindow/pad storage, colors and attributes, resizing, tty modes, keyboard escape-sequence decoding, ordinary mouse support for now, terminfo for now, and the desired-screen/current-screen update model.
 
-This branch is not trying to preserve Windows consoles, OS/2, old proprietary Unix systems, serial-terminal performance tricks, every historical curses compatibility surface, language bindings, or packaging/release machinery.
+Do not optimize this branch for Windows consoles, OS/2, proprietary/ancient Unix, serial-terminal traffic tricks, every historical compatibility API, alternate language bindings, or upstream packaging/release work.
 
-## How to remove things
+## Evidence vocabulary
 
-Remove one conceptual family at a time. Before deleting a mechanism, identify what problem it solved and whether that problem is still inside the target. Important source files should get a short tombstone comment where deleting a block would otherwise make the surviving control flow mysterious. Do not leave a comment for every deleted statement.
+- **inspected**: source ownership/references were traced
+- **built**: a named configuration actually compiled
+- **tested**: named tests actually ran
+- **device-tested**: execution happened on a physical target device
 
-A tombstone should say, in ordinary language, what was removed, why ncurses had it, and why this branch no longer models that problem. Upstream history remains available in the repository history and the public ncurses source, so tombstones should explain rather than preserve dead code in comments.
+Do not infer Android device acceptance from source inspection or a host build.
 
-## Pruning log
+## Phase 1 — separate non-core implementations
 
-### Phase 1a: language bindings removed
+### Ada95 and C++ bindings
 
-Removed the complete Ada95 and C++ binding/demo trees, together with their source-first top-level links.
+**Removed:** complete `_/Ada95` and `_/c++` trees plus their source-first top-level links.
 
-What they solved: ncurses shipped language-specific wrappers, demos, and their own supporting build machinery so Ada and C++ programs could use the C library through those interfaces.
+**Original problem:** language-specific wrappers, examples and build machinery for Ada95 and C++ clients.
 
-Why they are gone here: the object of this branch is the C implementation of the terminal/screen model itself. Neither binding explains how WINDOW state, screen updating, cursor motion, terminal capabilities, or keyboard decoding work.
+**Why outside target:** the object of study is the C implementation of WINDOW state, refresh, terminal painting, cursor movement and input decoding.
 
-Replacement: none. The C implementation is the object being studied. Historical binding sources remain recoverable from repository history and upstream ncurses.
+**Replacement:** none; the C API/implementation remains.
 
-Inspection: both bindings were separate top-level source trees. The inherited configure system still contains optional binding detection/rules; those are retired during the build-world pass rather than mixed into the source-tree deletion.
+**Inspection:** both were independent top-level modules.  Their stale configure branches are retired during build-world narrowing.
 
-Archaeology: history for `Ada95/` and `c++/`, including their Makefiles/configure machinery and examples.
+**Archaeology:** history for `Ada95/`, `c++/`, their Makefiles and configure paths.
 
-### Phase 1b: form, menu and panel libraries removed
+### form, menu and panel
 
-Removed `_/form`, `_/menu`, `_/panel` and their source-first top-level links.
+**Removed:** `_/form`, `_/menu`, `_/panel` and their top-level links.
 
-What they solved: these are higher-level libraries built on curses. Forms manages fields and validation, menu manages selectable menu items, and panel manages overlapping-window stacking.
+**Original problem:** higher-level field/form, menu-selection and overlapping-panel libraries layered on curses windows.
 
-Why they are gone here: they are clients/layers above the WINDOW, refresh, input and terminal-painting mechanisms being studied. Their implementations are not required by the central curses execution path.
+**Why outside target:** they consume curses rather than implement the terminal/screen core.
 
-Replacement: none. Applications can still use ordinary curses windows, subwindows, pads, attributes, input and refresh directly.
+**Replacement:** ordinary WINDOW/subwindow/pad, attribute, input and refresh operations.
 
-Inspection: each library is an independent top-level module. The inherited `configure.in` explicitly adds `panel menu form` to `modules_to_build`; that stale traversal is removed in the build cleanup pass rather than preserved as an abstraction for deleted libraries.
+**Inspection:** each is an independent module; inherited `configure.in` still names `panel menu form` in `modules_to_build`, a build-world debt rather than a reason to retain the libraries.
 
-Archaeology: history for `form/`, `menu/`, `panel/`, their `Makefile.in` files, and the `modules_to_build` block in `configure.in`.
+**Archaeology:** history for `form/`, `menu/`, `panel/` and their build entries.
 
-Validation: source-tree separation was inspected before deletion. No build receipt is claimed yet because the inherited generated build still names removed modules; Phase 1 is not build-consistent until those references are removed.
+### Win32 console and MinGW implementation
 
-### Phase 1c: Win32 console and MinGW implementation removed
+**Removed:** `_/ncurses/win32con`, `ncurses/tinfo/lib_win32con.c`, `lib_win32util.c`, MinGW-specific `nc_mingw.h`/`ncurses_mingw.h`, `win32_curses.h`, and `README.MinGW`.
 
-Removed the dedicated Win32 console drivers in `_/ncurses/win32con`, Win32 terminal helper implementations in `_/ncurses/tinfo/lib_win32con.c` and `lib_win32util.c`, the MinGW-specific headers `nc_mingw.h` and `ncurses_mingw.h`, `win32_curses.h`, and the MinGW readme.
+**Original problem:** drive a native Windows console instead of a Unix tty/pty and adapt compilation/runtime details to MinGW.
 
-What they solved: ncurses can bypass the Unix terminal/pty model and drive a native Windows console, while MinGW headers adapt the library to Windows compiler/runtime interfaces.
+**Why outside target:** Linux/glibc and Android/Bionic use the Unix tty + escape-sequence path.
 
-Why they are gone here: this branch studies the Unix tty + terminfo path used by Linux/glibc, Android/Bionic and ordinary ptys. A native Windows console is a different output/input backend and is not part of that execution model.
+**Replacement:** the surviving Unix path is `tinfo_driver.c`, termios/tty handling, `tty_update`, `mvcur`, and terminal sequences selected through terminfo.
 
-Replacement: the surviving path is `tinfo_driver.c` plus the Unix tty screen updater, termios handling and emitted terminal escape sequences. No Windows-console replacement is provided.
+**Inspection:** runtime backend code was physically isolated. `ncurses/Makefile.in` still names `nc_win32.h` and a `win32con` source directory; that compatibility header and stale generated-build references are deliberately removed with the build-world pass rather than hidden in this source deletion.
 
-Inspection: the removed implementation is physically isolated in `ncurses/win32con` plus the two `tinfo/lib_win32*` helpers. `ncurses/Makefile.in` still names `nc_win32.h` as an unconditional generated-build dependency and still defines a `win32con` source directory. Those build references, the compatibility header itself, and configure probes are deliberately deferred to the build-world cleanup so this source deletion is reviewable as one conceptual cut rather than a giant generated-config rewrite.
+**Archaeology:** history for `ncurses/win32con/*`, `ncurses/tinfo/lib_win32*.c`, `include/nc_*mingw.h`, `include/win32_curses.h`, `include/nc_win32.h`.
 
-Archaeology: `ncurses/win32con/win32_driver.c`, `ncurses/win32con/win_driver.c`, `ncurses/tinfo/lib_win32con.c`, `ncurses/tinfo/lib_win32util.c`, `include/nc_mingw.h`, `include/ncurses_mingw.h`, `include/win32_curses.h`, and `include/nc_win32.h` in repository history.
+### OS/2 and EMX
 
-Validation: source ownership and the Unix-vs-Windows backend split were inspected. No build receipt is claimed at this commit; the inherited build still contains references scheduled for the Phase 3 cleanup.
+**Removed:** `Makefile.os2`, `README.emx`, `misc/emx.src`, the REXX `.cmd` scripts, and OS/2 DLL `.def/.ref` export tables for ncurses/form/menu/panel.
 
-### Phase 1d: OS/2 and EMX support removed
+**Original problem:** configure/build ncurses in EMX, manufacture OS/2 DLL/import libraries and ordinal export tables, install an EMX terminal database, and create an OS/2 binary distribution.
 
-Removed `Makefile.os2`, `README.emx`, the EMX-specific terminfo source, the REXX `.cmd` scripts used to manufacture/check DLL exports, and the form/menu/panel/ncurses `.def`/`.ref` export-table files owned by that build path.
+**Why outside target:** OS/2/EMX is outside the POSIX tty target and its export/REXX machinery has no role in the surviving runtime.
 
-What it solved: ncurses carried a wrapper build for the OS/2 EMX environment. It regenerated an EMX-compatible configure script, built OS/2 DLL/import libraries, maintained ordinal export tables, installed an EMX-specific terminal database, and could construct a binary OS/2 distribution.
+**Replacement:** none; only the POSIX compiler/libc/termios platform model is retained.
 
-Why it is gone here: OS/2 and EMX are outside the Linux/Bionic/POSIX-pty target. The export-table and REXX machinery has no role in the surviving Unix terminal execution path.
+**Inspection:** `Makefile.os2` directly owned the removed EMX data, REXX scripts, `.def/.ref` tables and `os2dist` target.
 
-Replacement: none. The ordinary POSIX compiler/libc/termios build path is the only platform model retained.
+**Archaeology:** history for `Makefile.os2`, `README.emx`, `misc/emx.src`, `misc/*.cmd`, `misc/{ncurses,form,menu,panel}.{def,ref}`.
 
-Inspection: `Makefile.os2` directly references `misc/emx.src`, `misc/makedef.cmd`, `misc/chkdef.cmd`, `misc/cleantic.cmd` and the `.def/.ref` files; its own comments and targets describe OS/2 DLLs, EMX installation and `os2dist`. The removed files form a self-contained platform/release family rather than shared curses runtime code.
+### Phase-1 validation state
 
-Archaeology: `Makefile.os2`, `README.emx`, `misc/emx.src`, `misc/*.cmd`, and `misc/{ncurses,form,menu,panel}.{def,ref}` in repository history.
+Source ownership was inspected before each deletion.  No build receipt is claimed yet: the inherited Autoconf/Makefile world still contains references to deleted targets.  Those references are now dead build branches and must be removed before the branch is called build-consistent.
 
-Validation: ownership and references were inspected. No OS/2 build is retained or claimed.
+## Phase 2 — packaging and release engineering
 
-### Phase 1e: stale build/configuration references still to remove
+### Upstream/downstream distribution machinery
 
-The runtime/source families above are gone. The inherited Autoconf and Makefile templates still contain options, probes and dependency names for deleted bindings, libraries and Windows support. Those are now dead build-world branches, not supported compatibility. They are removed in the build narrowing pass before a Phase-1/3 build receipt is claimed.
+**Removed:** `_/package`, `_/test/package`, imported downstream patch directory `_/m`, release announcement templates/metadata (`ANNOUNCE`, `announce.html.in`, `MANIFEST`, `dist.mk`), and `test/make-tar.sh`.
 
-Packaging copies of MinGW support are handled with the packaging/release-engineering phase rather than counted as runtime backend code.
+**Original problem:** describe distro packages, carry downstream packaging recipes/patches, construct release archives and announcements, and exercise tarball packaging.
 
-### Core path being preserved while pruning
+**Why outside target:** none of this participates in WINDOW state, terminfo, tty input/output, screen diffing or terminal painting.  The branch is a source archaeology tree, not an ncurses distribution factory.
+
+**Replacement:** none. Repository history remains the source for upstream packaging archaeology.
+
+**Inspection:** the removed trees/files are package specs, distro installers/recipes, imported patch payloads, release manifests/announcement material, and tarball tooling.  Core `COPYING`, `AUTHORS`, `NEWS`, source documentation and ordinary test programs remain.
+
+**Archaeology:** history for `package/`, `test/package/`, `m/`, `ANNOUNCE`, `announce.html.in`, `MANIFEST`, `dist.mk`, `test/make-tar.sh`.
+
+**Validation:** file-role inspection only; this deletion does not claim a build or runtime test.
+
+## Surviving execution path
 
 Output:
 
-    WINDOW edits
+    application edits WINDOW
         -> wnoutrefresh / wrefresh
-        -> newscr (desired whole screen)
-        -> doupdate / tty_update
-        -> mvcur + terminal attribute/text output
-        -> physical terminal
+        -> newscr desired whole-screen image
+        -> doupdate / tty_update compares newscr with curscr
+        -> mvcur positions physical cursor
+        -> attributes + character bytes are emitted
+        -> curscr remembers the resulting physical state
 
 Input:
 
-    terminal input
-        -> byte/event buffering
-        -> escape-sequence recognition
+    terminal bytes/events
+        -> input buffering
+        -> escape-sequence/key recognition
         -> wgetch/getch
-        -> application character/key event
+        -> application character or key event
 
-The important distinction is between editing in-memory screen state and realizing it on the terminal. Pruning must not erase that distinction merely to reduce line count.
+The important architectural distinction is between editing in-memory screen state and realizing that state on the terminal.  Pruning must not erase it just to reduce line count.
 
-## Later candidates, not yet removed
+## Build-world work still pending
 
-These need mechanism-by-mechanism investigation rather than bulk deletion:
+Narrow `configure`, `configure.in`, Makefile templates, headers and generated-build machinery to the modern POSIX target. Remove probes/options whose only purpose is deleted bindings/libraries, Windows/OS2, ancient proprietary Unix or obsolete compilers. Identify the eventual small build inputs: compiler, POSIX/libc, termios/tty, terminfo, wide characters and source lists.
 
-- termcap-compatible `tget*` API
+## Later candidates requiring mechanism-level inspection
+
+- termcap-compatible `tget*` surface
 - soft-label keys
 - screen dump/restore compatibility
 - legacy coding modes
+- compatibility aliases tied only to old curses/platforms
 - hard-tab/back-tab cursor movement
-- baud-rate and terminal-padding cost accounting
+- baud-rate and serial-padding cost accounting
 - memory-relative cursor addressing
-- `cursor_to_ll` and auto-left-margin movement tricks
+- `cursor_to_ll` and auto-left-margin tricks
 - save/restore-cursor optimization tricks
-- hardware scrolling and insert/delete-line optimizations
-- `hashmap.c` line-shift recognition
+- hardware scrolling and insert/delete-line traffic optimizations
+- `hardscroll.c`
+- `hashmap.c` line-shift recognition (keep/simplify if useful independently)
 
-For each later cut, record the old problem, the surviving replacement if any, the validation/inspection evidence, and useful upstream file/function names.
+For each later cut, record the old problem, surviving replacement if any, inspection/test evidence, and useful upstream file/function names.
