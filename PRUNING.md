@@ -1,6 +1,6 @@
 # Pruning ncurses toward a readable modern core
 
-This branch is an archaeology branch between upstream ncurses and a later clean-sheet icurses.  The goal is to learn the implementation by subtraction: keep the modern terminal model visible, remove support for worlds we are not targeting, and leave enough explanation that the next reader can tell what used to be here and why it disappeared.
+This branch is an archaeology branch between upstream ncurses and a later clean-sheet icurses. The goal is to learn the implementation by subtraction: keep the modern terminal model visible, remove support for worlds we are not targeting, and leave enough explanation that the next reader can tell what used to be here and why it disappeared.
 
 ## Target
 
@@ -10,9 +10,9 @@ This branch is not trying to preserve Windows consoles, OS/2, old proprietary Un
 
 ## How to remove things
 
-Remove one conceptual family at a time.  Before deleting a mechanism, identify what problem it solved and whether that problem is still inside the target.  Important source files should get a short tombstone comment where deleting a block would otherwise make the surviving control flow mysterious.  Do not leave a comment for every deleted statement.
+Remove one conceptual family at a time. Before deleting a mechanism, identify what problem it solved and whether that problem is still inside the target. Important source files should get a short tombstone comment where deleting a block would otherwise make the surviving control flow mysterious. Do not leave a comment for every deleted statement.
 
-A tombstone should say, in ordinary language, what was removed, why ncurses had it, and why this branch no longer models that problem.  Upstream history remains available in the repository history and the public ncurses source, so tombstones should explain rather than preserve dead code in comments.
+A tombstone should say, in ordinary language, what was removed, why ncurses had it, and why this branch no longer models that problem. Upstream history remains available in the repository history and the public ncurses source, so tombstones should explain rather than preserve dead code in comments.
 
 ## Pruning log
 
@@ -22,24 +22,39 @@ Removed the complete Ada95 and C++ binding/demo trees, together with their sourc
 
 What they solved: ncurses shipped language-specific wrappers, demos, and their own supporting build machinery so Ada and C++ programs could use the C library through those interfaces.
 
-Why they are gone here: the object of this branch is the C implementation of the terminal/screen model itself.  Neither binding explains how WINDOW state, screen updating, cursor motion, terminal capabilities, or keyboard decoding work.  Keeping them more than doubled the number of places a reader could wander without getting closer to that core.
+Why they are gone here: the object of this branch is the C implementation of the terminal/screen model itself. Neither binding explains how WINDOW state, screen updating, cursor motion, terminal capabilities, or keyboard decoding work.
 
-Replacement: none.  The C implementation is the object being studied.  Historical binding sources remain recoverable from repository history and upstream ncurses.
+Replacement: none. The C implementation is the object being studied. Historical binding sources remain recoverable from repository history and upstream ncurses.
 
-Build note: the inherited configure system still contains optional Ada/C++ detection and binding rules.  Those build-system branches are intentionally left for the platform/build pruning pass rather than mixing generated build surgery into this source-removal commit.  Until that pass, configure the archaeology branch without those optional bindings when exercising the inherited build.
+Inspection: both bindings were separate top-level source trees. The inherited configure system still contains optional binding detection/rules; those are retired during the build-world pass rather than mixed into the source-tree deletion.
 
-### Phase 1b: add-on libraries and non-Unix backends
+Archaeology: history for `Ada95/` and `c++/`, including their Makefiles/configure machinery and examples.
+
+### Phase 1b: form, menu and panel libraries removed
+
+Removed `_/form`, `_/menu`, `_/panel` and their source-first top-level links.
+
+What they solved: these are higher-level libraries built on curses. Forms manages fields and validation, menu manages selectable menu items, and panel manages overlapping-window stacking.
+
+Why they are gone here: they are clients/layers above the WINDOW, refresh, input and terminal-painting mechanisms being studied. Their implementations are not required by the central curses execution path.
+
+Replacement: none. Applications can still use ordinary curses windows, subwindows, pads, attributes, input and refresh directly.
+
+Inspection: each library is an independent top-level module. The inherited `configure.in` explicitly adds `panel menu form` to `modules_to_build`; that stale traversal is removed in the build cleanup pass rather than preserved as an abstraction for deleted libraries.
+
+Archaeology: history for `form/`, `menu/`, `panel/`, their `Makefile.in` files, and the `modules_to_build` block in `configure.in`.
+
+Validation: source-tree separation was inspected before deletion. No build receipt is claimed yet because the inherited generated build still names removed modules; Phase 1 is not build-consistent until those references are removed.
+
+### Phase 1c: non-Unix backends still to remove
 
 Next cuts:
 
-- form library
-- menu library
-- panel library
 - Win32 console backend
 - OS/2 build support
 - MinGW-specific support that exists only for the removed Windows target
 
-These are being removed before the central `base`, `tty`, `tinfo`, and `widechar` implementation is changed.  Their absence should make the remaining architecture easier to see without yet changing the core WINDOW -> desired screen -> physical terminal path.
+These cuts happen before the central `base`, `tty`, `tinfo`, and `widechar` implementation is changed.
 
 ### Core path being preserved while pruning
 
@@ -60,7 +75,7 @@ Input:
         -> wgetch/getch
         -> application character/key event
 
-The important distinction is between editing in-memory screen state and realizing it on the terminal.  Pruning must not erase that distinction merely to reduce line count.
+The important distinction is between editing in-memory screen state and realizing it on the terminal. Pruning must not erase that distinction merely to reduce line count.
 
 ## Later candidates, not yet removed
 
@@ -78,4 +93,4 @@ These need mechanism-by-mechanism investigation rather than bulk deletion:
 - hardware scrolling and insert/delete-line optimizations
 - `hashmap.c` line-shift recognition
 
-For each later cut, record the old problem, the surviving replacement if any, and the evidence used to decide that the old mechanism is outside the target.
+For each later cut, record the old problem, the surviving replacement if any, the validation/inspection evidence, and useful upstream file/function names.
