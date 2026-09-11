@@ -46,15 +46,25 @@ Archaeology: history for `form/`, `menu/`, `panel/`, their `Makefile.in` files, 
 
 Validation: source-tree separation was inspected before deletion. No build receipt is claimed yet because the inherited generated build still names removed modules; Phase 1 is not build-consistent until those references are removed.
 
-### Phase 1c: non-Unix backends still to remove
+### Phase 1c: Win32 console and MinGW implementation removed
 
-Next cuts:
+Removed the dedicated Win32 console drivers in `_/ncurses/win32con`, Win32 terminal helper implementations in `_/ncurses/tinfo/lib_win32con.c` and `lib_win32util.c`, the MinGW-specific headers `nc_mingw.h` and `ncurses_mingw.h`, `win32_curses.h`, and the MinGW readme.
 
-- Win32 console backend
-- OS/2 build support
-- MinGW-specific support that exists only for the removed Windows target
+What they solved: ncurses can bypass the Unix terminal/pty model and drive a native Windows console, while MinGW headers adapt the library to Windows compiler/runtime interfaces.
 
-These cuts happen before the central `base`, `tty`, `tinfo`, and `widechar` implementation is changed.
+Why they are gone here: this branch studies the Unix tty + terminfo path used by Linux/glibc, Android/Bionic and ordinary ptys. A native Windows console is a different output/input backend and is not part of that execution model.
+
+Replacement: the surviving path is `tinfo_driver.c` plus the Unix tty screen updater, termios handling and emitted terminal escape sequences. No Windows-console replacement is provided.
+
+Inspection: the removed implementation is physically isolated in `ncurses/win32con` plus the two `tinfo/lib_win32*` helpers. `ncurses/Makefile.in` still names `nc_win32.h` as an unconditional generated-build dependency and still defines a `win32con` source directory. Those build references, the compatibility header itself, and configure probes are deliberately deferred to the build-world cleanup so this source deletion is reviewable as one conceptual cut rather than a giant generated-config rewrite.
+
+Archaeology: `ncurses/win32con/win32_driver.c`, `ncurses/win32con/win_driver.c`, `ncurses/tinfo/lib_win32con.c`, `ncurses/tinfo/lib_win32util.c`, `include/nc_mingw.h`, `include/ncurses_mingw.h`, `include/win32_curses.h`, and `include/nc_win32.h` in repository history.
+
+Validation: source ownership and the Unix-vs-Windows backend split were inspected. No build receipt is claimed at this commit; the inherited build still contains references scheduled for the Phase 3 cleanup.
+
+### Phase 1d: OS/2 support still to remove
+
+Next cut: the OS/2/EMX build files, terminal data and command scripts, followed by their stale configure/build references. Packaging copies of MinGW support are handled with the packaging/release-engineering phase rather than counted as runtime backend code.
 
 ### Core path being preserved while pruning
 
