@@ -66,3 +66,82 @@ jobs:
             'evidence: Bionic configure/build, PTY executable link, ELF checks, checksummed bundle' \
             'Android runtime: NOT RUN by this job' \
             'physical-device acceptance: NOT ESTABLISHED'
+
+  # Artifact-production fallback while the accepted self-hosted Debian runners
+  # are unavailable.  This does not replace the job above as Debian runner
+  # acceptance: only the build userspace is Debian; the GitHub host is Ubuntu.
+  github-hosted-debian-package:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    container: debian:bookworm-slim
+    timeout-minutes: 35
+    env:
+      EXPECTED_NDK_REVISION: 27.3.13750724
+      NDK_ARCHIVE_SHA1: 22105e410cf29afcf163760cc95522b9fb981121
+    steps:
+      - name: Install Debian build prerequisites
+        shell: bash
+        run: |
+          set -eux
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential ca-certificates curl git ncurses-bin python3 unzip
+          rm -rf /var/lib/apt/lists/*
+          . /etc/os-release
+          test "$ID" = debian
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Install pinned Android NDK r27d
+        shell: bash
+        run: |
+          set -eux
+          archive=/tmp/android-ndk-r27d-linux.zip
+          curl --fail --location --retry 3 \
+            https://dl.google.com/android/repository/android-ndk-r27d-linux.zip \
+            --output "$archive"
+          printf '%s  %s\n' "$NDK_ARCHIVE_SHA1" "$archive" | sha1sum -c -
+          unzip -q "$archive" -d /opt
+          rm "$archive"
+          grep -F 'Pkg.Revision = 27.3.13750724' /opt/android-ndk-r27d/source.properties
+          printf 'ANDROID_NDK_HOME=/opt/android-ndk-r27d\n' >> "$GITHUB_ENV"
+
+      - name: Build both checksummed Android bundles
+        shell: bash
+        run: |
+          set +e
+          status=0
+          bash .github/build_bionic_smoke.sh armv7a || status=1
+          bash .github/build_bionic_smoke.sh aarch64 || status=1
+          exit "$status"
+
+      - name: Retain phone/tablet bundles and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bionic-api24-device-bundles-${{ github.run_id }}
+          path: |
+            _/bionic-validation/armv7a/bundle/
+            _/bionic-validation/armv7a/*.txt
+            _/bionic-validation/armv7a/*.log
+            _/bionic-validation/armv7a/link.map
+            _/bionic-validation/armv7a/build/config.log
+            _/bionic-validation/aarch64/bundle/
+            _/bionic-validation/aarch64/*.txt
+            _/bionic-validation/aarch64/*.log
+            _/bionic-validation/aarch64/link.map
+            _/bionic-validation/aarch64/build/config.log
+          if-no-files-found: warn
+
+      - name: Record fallback boundary
+        if: always()
+        run: |
+          printf '%s\n' \
+            'purpose: produce a pinned-NDK Bionic bundle for Android runtime testing' \
+            'build userspace: Debian bookworm container on GitHub-hosted Ubuntu' \
+            'self-hosted Debian acceptance: NOT ESTABLISHED by this fallback job' \
+            'Android runtime: NOT RUN by this job' \
+            'physical-device acceptance: NOT ESTABLISHED'
