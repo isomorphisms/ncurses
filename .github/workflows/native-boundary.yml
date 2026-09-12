@@ -1,0 +1,74 @@
+name: Shared native libc boundary
+
+on:
+  push:
+    branches: [source-first-layout]
+  pull_request:
+    branches: [source-first-layout]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-boundary:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux, debian]
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [host, armv7a, aarch64]
+    env:
+      NATIVE_BOUNDARY_REVISION: db58a65c1076e4e70c73299ecc79396045672463
+      OUTPUT: ${{ runner.temp }}/ncurses-native-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Check Debian build environment
+        shell: bash
+        run: |
+          set -eu
+          . /etc/os-release
+          test "$ID" = debian
+          test "$(uname -m)" = x86_64
+      - name: Check out the exact consumer source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          path: consumer
+      - name: Check out the immutable shared suite
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: isomorphisms/ai-ci
+          ref: db58a65c1076e4e70c73299ecc79396045672463
+          persist-credentials: false
+          path: shared-aici
+      - name: Build the platform probes and run available host checks
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -eu
+          test "$(git -C shared-aici rev-parse HEAD)" = "$NATIVE_BOUNDARY_REVISION"
+          bash shared-aici/native-boundary/build.sh "$TARGET" "$OUTPUT"
+      - name: Record the separate platform and consumer identities
+        shell: bash
+        run: |
+          set -eu
+          {
+            printf 'schema\taici-native-consumer-v1\n'
+            printf 'consumer\tisomorphisms/ncurses\n'
+            printf 'consumer_revision\t%s\n' "$(git -C consumer rev-parse HEAD)"
+            printf 'suite_revision\t%s\n' "$(git -C shared-aici rev-parse HEAD)"
+            printf 'scope\tstandalone-libc-platform-probes\n'
+            printf 'ncurses_pty_acceptance\tSEPARATE_WORKFLOW_REQUIRED\n'
+            printf 'android_execution\tNOT_RUN\n'
+            printf 'physical_device\tNOT_ESTABLISHED\n'
+          } > "$OUTPUT/consumer.tsv"
+      - name: Retain platform artifacts and available host receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ncurses-native-${{ matrix.target }}-${{ github.run_id }}
+          path: ${{ env.OUTPUT }}/
+          if-no-files-found: error
