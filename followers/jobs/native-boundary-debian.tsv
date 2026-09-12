@@ -12,14 +12,14 @@ artifact_sha256	-
 follower_platform	hetzner-debian-13
 follower_arch	x86_64
 required	yes
-action	Register or provision this repository's Debian x86-64 runner, with C17 compiler/headers, Bash, Git, awk, coreutils, readelf, tar/gzip and NDK 27.3.13750724. Execute .github/workflows/native-boundary.yml at the exact trigger commit; it checks out AICI db58a65c1076e4e70c73299ecc79396045672463 and builds host, ARMv7a and AArch64 probes.
+action	Provision the Debian x86-64 runner and execute the shared native-boundary workflow at this exact trigger commit.
 acceptance_kind	runtime
-acceptance_action	Record actual Debian runner identity and exact consumer/suite SHAs; require both host offset-mode executions/self-tests and both NDK cross-build jobs; retain compiler/ELF/package diagnostics and workflow URLs. This is host pipeline execution, not Android or ncurses PTY acceptance.
-state	pending
+acceptance_action	Require host runtime/self-tests and both pinned-NDK cross-builds with exact consumer and suite identities; no Android or curses PTY acceptance is inferred.
+state	superseded
 last_attempt_commit	-
-blocker	Workflow source and local shared-suite checks exist; this repository's exact-source registered-runner execution and pinned-NDK results have not been established.
+blocker	The initial workflow used runner.temp in job-level env; the successor resolves runner paths only inside steps.
 evidence	-
 depends_on	-
-reason	Mobile-led shared platform work must leave an actionable Debian follower. Android emulator, physical phone/tablet and 16-KiB runtime obligations are recorded separately in AICI PR 86; the existing curses PTY path remains independently required.
-superseded_by	-
+reason	Preserve the original exact-source obligation while explicitly following its workflow correction instead of silently rewriting history.
+superseded_by	native-boundary-debian-step-paths
 follow_policy	exact
