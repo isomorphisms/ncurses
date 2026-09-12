@@ -1,0 +1,25 @@
+schema	aici-follower-job-v1
+job_id	native-boundary-debian
+repository	isomorphisms/ncurses
+branch	bionic-runtime-validation
+pr	3
+trigger_commit	8bb553216a9fe5183472fd34bf1e501b7dbd5841
+leader_platform	local-debian-container
+leader_arch	x86_64
+leader_evidence	.github/workflows/native-boundary.yml
+artifact	-
+artifact_sha256	-
+follower_platform	hetzner-debian-13
+follower_arch	x86_64
+required	yes
+action	Register or provision this repository's Debian x86-64 runner, with C17 compiler/headers, Bash, Git, awk, coreutils, readelf, tar/gzip and NDK 27.3.13750724. Execute .github/workflows/native-boundary.yml at the exact trigger commit; it checks out AICI db58a65c1076e4e70c73299ecc79396045672463 and builds host, ARMv7a and AArch64 probes.
+acceptance_kind	runtime
+acceptance_action	Record actual Debian runner identity and exact consumer/suite SHAs; require both host offset-mode executions/self-tests and both NDK cross-build jobs; retain compiler/ELF/package diagnostics and workflow URLs. This is host pipeline execution, not Android or ncurses PTY acceptance.
+state	pending
+last_attempt_commit	-
+blocker	Workflow source and local shared-suite checks exist; this repository's exact-source registered-runner execution and pinned-NDK results have not been established.
+evidence	-
+depends_on	-
+reason	Mobile-led shared platform work must leave an actionable Debian follower. Android emulator, physical phone/tablet and 16-KiB runtime obligations are recorded separately in AICI PR 86; the existing curses PTY path remains independently required.
+superseded_by	-
+follow_policy	exact
