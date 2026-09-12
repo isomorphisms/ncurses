@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 # Fresh cross-build and a relocatable PTY test bundle. Never runs target code.
 set -euo pipefail
-root=$(cd "$(dirname "$0")/.." && pwd)
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+if [ -n "${GITHUB_WORKSPACE:-}" ] && [ -f "$GITHUB_WORKSPACE/_/configure" ]; then
+  root=$GITHUB_WORKSPACE
+else
+  root=$(cd "$script_dir/.." && pwd)
+fi
 abi=${1:?usage: bash .github/build_bionic_smoke.sh armv7a|aarch64}
 api=24
 case "$abi" in
@@ -19,9 +24,20 @@ revision=$(sed -n 's/^Pkg.Revision[[:space:]]*=[[:space:]]*//p' "$ndk/source.pro
 [ "$revision" = "$EXPECTED_NDK_REVISION" ] || { echo "NDK revision mismatch: $revision" >&2; exit 1; }
 for program in clang llvm-ar llvm-ranlib llvm-strip llvm-readelf llvm-nm; do test -x "$tools/$program"; done
 for program in cc make tic python3 git sha256sum; do command -v "$program" >/dev/null; done
-# A clean tracked tree and a new build directory avoid stale binaries/caches.
-git -C "$root" diff --quiet HEAD --
-source_commit=$(git -C "$root" rev-parse HEAD)
+# Prefer the checkout's Git identity and cleanliness check.  Job containers may
+# expose the exact checked-out workspace without its Git metadata; in that case
+# the workflow must pass the exact checkout ref explicitly as SOURCE_COMMIT.
+if git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  git -C "$root" diff --quiet HEAD --
+  source_commit=$(git -C "$root" rev-parse HEAD)
+  if [ -n "${SOURCE_COMMIT:-}" ] && [ "$source_commit" != "$SOURCE_COMMIT" ]; then
+    echo "checkout/source mismatch: git=$source_commit expected=$SOURCE_COMMIT" >&2
+    exit 1
+  fi
+else
+  : "${SOURCE_COMMIT:?SOURCE_COMMIT is required when Git metadata is unavailable}"
+  source_commit=$SOURCE_COMMIT
+fi
 work=$root/_/bionic-validation/$abi
 mkdir -p "$(dirname "$work")"
 mkdir "$work" || { echo "build directory already exists; use a fresh checkout: $work" >&2; exit 1; }
