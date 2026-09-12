@@ -21,7 +21,7 @@ jobs:
         target: [host, armv7a, aarch64]
     env:
       NATIVE_BOUNDARY_REVISION: db58a65c1076e4e70c73299ecc79396045672463
-      OUTPUT: ${{ runner.temp }}/ncurses-native-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
+      OUTPUT_NAME: ncurses-native-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Check Debian build environment
         shell: bash
@@ -50,7 +50,7 @@ jobs:
         run: |
           set -eu
           test "$(git -C shared-aici rev-parse HEAD)" = "$NATIVE_BOUNDARY_REVISION"
-          bash shared-aici/native-boundary/build.sh "$TARGET" "$OUTPUT"
+          bash shared-aici/native-boundary/build.sh "$TARGET" "$RUNNER_TEMP/$OUTPUT_NAME"
       - name: Record the separate platform and consumer identities
         shell: bash
         run: |
@@ -64,11 +64,11 @@ jobs:
             printf 'ncurses_pty_acceptance\tSEPARATE_WORKFLOW_REQUIRED\n'
             printf 'android_execution\tNOT_RUN\n'
             printf 'physical_device\tNOT_ESTABLISHED\n'
-          } > "$OUTPUT/consumer.tsv"
+          } > "$RUNNER_TEMP/$OUTPUT_NAME/consumer.tsv"
       - name: Retain platform artifacts and available host receipts
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ncurses-native-${{ matrix.target }}-${{ github.run_id }}
-          path: ${{ env.OUTPUT }}/
+          path: ${{ runner.temp }}/${{ env.OUTPUT_NAME }}/
           if-no-files-found: error
