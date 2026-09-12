@@ -23,6 +23,7 @@ jobs:
     name: android-bionic-wide (${{ matrix.abi }})
     env:
       EXPECTED_NDK_REVISION: 27.3.13750724
+      SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Verify Debian execution environment
         shell: bash
@@ -78,6 +79,7 @@ jobs:
     env:
       EXPECTED_NDK_REVISION: 27.3.13750724
       NDK_ARCHIVE_SHA1: 22105e410cf29afcf163760cc95522b9fb981121
+      SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Install Debian build prerequisites
         shell: bash
