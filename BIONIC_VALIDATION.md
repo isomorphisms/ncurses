@@ -29,30 +29,29 @@ replacement curses implementation.
 | --- | --- | --- |
 | Existing PR #2 cross-build | Two Android ABI builds of the pruned source | Android execution |
 | New build, link and ELF checks | The screen/input harness links this exact archive into an Android PIE, with the expected ABI, loader and platform dependencies | Successful startup or PTY behavior |
-| New harness on Debian/glibc | The test itself exercises the host-built pruned core | Bionic behavior |
+| New harness on GitHub-hosted Ubuntu/glibc | The test itself exercises the host-built pruned core | Bionic behavior |
 | Harness in an Android emulator | That image's Bionic/PTY execution | Physical phone/tablet behavior |
 | Harness on a named physical device | That device's private-PTY execution for the checks below | Interactive renderer, keyboard/IME or real resize acceptance |
 | Separate interactive device observations | The explicitly recorded terminal/version/device behaviors | Universal Android compatibility |
 
-The new path is **unvalidated until its own exact-source checks execute**.
-Shell/YAML parsing or a compiled terminfo fixture is not a C build receipt.
-A queued/skipped job is not a pass. Old Ubuntu receipts remain historical
-compile evidence; they do not establish a new Debian execution receipt.
+The new path needs its own exact-source checks; shell/YAML parsing or a compiled
+terminfo fixture is not a C build receipt, and a queued/skipped job is not a
+pass. Hosted-Ubuntu build receipts remain separate from Android execution.
 
 ## Build a fresh bundle
 
-The two workflows use `[self-hosted, linux, debian]`, verify `/etc/os-release`,
-and reject fork pull requests before allocating a runner. They explicitly
-check out the PR head (or push SHA), rather than silently attributing a
-synthetic merge checkout to the head commit.
+The host and Bionic workflows use GitHub-hosted `ubuntu-24.04`, verify the
+Ubuntu/x86-64 execution environment, and explicitly check out the PR head (or
+push SHA) rather than silently attributing a synthetic merge checkout to the
+head commit.
 
-Runner provisioning must provide a registered Debian runner, a native C build
-environment (`cc`, libc development headers, `make`, `awk`), `git`, `python3`,
-`tic`, the ordinary shell utilities, and NDK 27.3.13750724. The existing host
-smoke also needs its xterm-256color entry. No runner registration, NDK install,
-license acceptance or execution is implied by the workflow file.
+The workflows install their ordinary Ubuntu build prerequisites themselves.
+The Bionic cross-build workflow downloads Android NDK r27d, verifies the pinned
+archive checksum and exact revision `27.3.13750724`, and exports that selected
+NDK explicitly. No self-hosted runner registration or external runner
+provisioning is required.
 
-From a clean checkout of the validation branch on that host:
+From a clean checkout of the validation branch on a compatible Ubuntu host:
 
 ```sh
 export ANDROID_NDK_HOME=/path/to/android-ndk-r27d
