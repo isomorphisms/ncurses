@@ -12,24 +12,45 @@ permissions:
 
 jobs:
   native-boundary:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, linux, debian]
-    timeout-minutes: 15
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         target: [host, armv7a, aarch64]
     env:
-      NATIVE_BOUNDARY_REVISION: db58a65c1076e4e70c73299ecc79396045672463
+      NATIVE_BOUNDARY_REVISION: 4475a3c1b3a1617bf0ae7b56e58bc478d9b946d8
+      NDK_ARCHIVE_SHA1: 22105e410cf29afcf163760cc95522b9fb981121
       OUTPUT_NAME: ncurses-native-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
-      - name: Check Debian build environment
+      - name: Check Ubuntu build environment
         shell: bash
         run: |
           set -eu
           . /etc/os-release
-          test "$ID" = debian
+          test "$ID" = ubuntu
           test "$(uname -m)" = x86_64
+      - name: Install host build prerequisites
+        shell: bash
+        run: |
+          set -eux
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential binutils ca-certificates curl unzip
+      - name: Install pinned Android NDK r27d
+        if: matrix.target != 'host'
+        shell: bash
+        run: |
+          set -eux
+          archive="$RUNNER_TEMP/android-ndk-r27d-linux.zip"
+          curl --fail --location --retry 3 \
+            https://dl.google.com/android/repository/android-ndk-r27d-linux.zip \
+            --output "$archive"
+          printf '%s  %s\n' "$NDK_ARCHIVE_SHA1" "$archive" | sha1sum -c -
+          unzip -q "$archive" -d "$RUNNER_TEMP"
+          rm "$archive"
+          grep -F 'Pkg.Revision = 27.3.13750724' "$RUNNER_TEMP/android-ndk-r27d/source.properties"
+          printf 'ANDROID_NDK_HOME=%s/android-ndk-r27d\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - name: Check out the exact consumer source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -40,7 +61,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: isomorphisms/ai-ci
-          ref: db58a65c1076e4e70c73299ecc79396045672463
+          ref: 4475a3c1b3a1617bf0ae7b56e58bc478d9b946d8
           persist-credentials: false
           path: shared-aici
       - name: Build the platform probes and run available host checks
