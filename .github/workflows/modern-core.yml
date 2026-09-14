@@ -2,15 +2,39 @@ name: modern core
 
 on:
   push:
-    branches: [prune-modern-core]
+    branches: [source-first-layout]
   pull_request:
     branches: [source-first-layout]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   linux-glibc-wide:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
+      - name: Verify Ubuntu execution environment
+        shell: bash
+        run: |
+          set -eu
+          . /etc/os-release
+          test "$ID" = ubuntu
+          test "$(uname -m)" = x86_64
+
+      - name: Install host build prerequisites
+        shell: bash
+        run: |
+          set -eux
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential ncurses-bin
+
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
 
       - name: Configure modern core
         working-directory: _
@@ -28,26 +52,56 @@ jobs:
         working-directory: _
         run: make -j2
 
-      - name: Build modern-core pty smoke test
+      - name: Build existing modern-core pty smoke test
         working-directory: _
         run: |
-          gcc \
-            -D_DEFAULT_SOURCE -D_XOPEN_SOURCE=600 \
-            -Iinclude \
-            ../.github/modern_core_smoke.c \
-            -Llib -lncursesw -lutil \
-            -o ../modern_core_smoke
+          cc -D_DEFAULT_SOURCE -D_XOPEN_SOURCE=600 -Iinclude \
+            ../.github/modern_core_smoke.c lib/libncursesw.a -lutil \
+            -o modern_core_smoke
 
-      - name: Exercise output input wide characters and resize
+      - name: Exercise existing output input wide characters and resize
+        working-directory: _
         env:
           LC_ALL: C.UTF-8
           TERM: xterm-256color
         run: ./modern_core_smoke
 
+      - name: Build portable PTY harness and controlled terminfo fixture
+        working-directory: _
+        run: |
+          cc -D_DEFAULT_SOURCE -Iinclude \
+            ../.github/bionic_runtime_smoke.c lib/libncursesw.a -lutil \
+            -o bionic_runtime_smoke_host
+          mkdir -p host-smoke-terminfo
+          tic -o host-smoke-terminfo ../.github/modern_core_smoke.ti
+
+      - name: Check the new harness on glibc without claiming Bionic execution
+        working-directory: _
+        shell: bash
+        env:
+          LC_ALL: C.UTF-8
+          TERM: ncurses-pruned-smoke
+          NCURSES_SMOKE_TERM: ncurses-pruned-smoke
+        run: |
+          set -euo pipefail
+          export TERMINFO="$PWD/host-smoke-terminfo" TERMINFO_DIRS="$PWD/host-smoke-terminfo"
+          ./bionic_runtime_smoke_host | tee host-smoke-receipt.txt
+          grep -qx 'runtime_libc=glibc' host-smoke-receipt.txt
+          grep -qx 'modern_core_pty=pass' host-smoke-receipt.txt
+
+      - name: Retain host diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: modern-core-glibc-${{ github.run_id }}
+          path: |
+            _/config.log
+            _/host-smoke-receipt.txt
+          if-no-files-found: warn
+
       - name: Record scope
         run: |
           printf '%s\n' \
-            'host: GitHub ubuntu-latest (glibc)' \
-            'configuration: wide-character ncurses core; Ada/C++ bindings/manpages/full test tree disabled' \
-            'exercised: WINDOW write, wide character, refresh/doupdate terminal output, wgetch key decoding, resize state' \
-            'this is not Android/Bionic device acceptance'
+            'execution environment: GitHub-hosted Ubuntu 24.04/glibc' \
+            'exercised: existing smoke plus controlled PTY UTF-8 input/output, bounded timeout, tty restoration' \
+            'this is not Android/Bionic execution or physical-device acceptance'

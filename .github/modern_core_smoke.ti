@@ -1,0 +1,10 @@
+# Self-contained test capabilities: no host database or use= inheritance.
+# Deliberately unique name prevents fallback to a host xterm entry.
+ncurses-pruned-smoke|private modern-core PTY fixture,
+    am,
+    cols#80, lines#24,
+    bel=^G, cr=^M, clear=\E[H\E[2J, el=\E[K, ed=\E[J,
+    cup=\E[%i%p1%d;%p2%dH,
+    cud1=^J, cub1=^H, cuf1=\E[C, cuu1=\E[A,
+    bold=\E[1m, sgr0=\E[0m,
+    smkx=\E[?1h\E=, rmkx=\E[?1l\E>, kcuu1=\EOA,

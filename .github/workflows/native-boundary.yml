@@ -1,0 +1,95 @@
+name: Shared native libc boundary
+
+on:
+  push:
+    branches: [source-first-layout]
+  pull_request:
+    branches: [source-first-layout]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-boundary:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [host, armv7a, aarch64]
+    env:
+      NATIVE_BOUNDARY_REVISION: 4475a3c1b3a1617bf0ae7b56e58bc478d9b946d8
+      NDK_ARCHIVE_SHA1: 22105e410cf29afcf163760cc95522b9fb981121
+      OUTPUT_NAME: ncurses-native-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Check Ubuntu build environment
+        shell: bash
+        run: |
+          set -eu
+          . /etc/os-release
+          test "$ID" = ubuntu
+          test "$(uname -m)" = x86_64
+      - name: Install host build prerequisites
+        shell: bash
+        run: |
+          set -eux
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential binutils ca-certificates curl unzip
+      - name: Install pinned Android NDK r27d
+        if: matrix.target != 'host'
+        shell: bash
+        run: |
+          set -eux
+          archive="$RUNNER_TEMP/android-ndk-r27d-linux.zip"
+          curl --fail --location --retry 3 \
+            https://dl.google.com/android/repository/android-ndk-r27d-linux.zip \
+            --output "$archive"
+          printf '%s  %s\n' "$NDK_ARCHIVE_SHA1" "$archive" | sha1sum -c -
+          unzip -q "$archive" -d "$RUNNER_TEMP"
+          rm "$archive"
+          grep -F 'Pkg.Revision = 27.3.13750724' "$RUNNER_TEMP/android-ndk-r27d/source.properties"
+          printf 'ANDROID_NDK_HOME=%s/android-ndk-r27d\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+      - name: Check out the exact consumer source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          path: consumer
+      - name: Check out the immutable shared suite
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: isomorphisms/ai-ci
+          ref: 4475a3c1b3a1617bf0ae7b56e58bc478d9b946d8
+          persist-credentials: false
+          path: shared-aici
+      - name: Build the platform probes and run available host checks
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -eu
+          test "$(git -C shared-aici rev-parse HEAD)" = "$NATIVE_BOUNDARY_REVISION"
+          bash shared-aici/native-boundary/build.sh "$TARGET" "$RUNNER_TEMP/$OUTPUT_NAME"
+      - name: Record the separate platform and consumer identities
+        shell: bash
+        run: |
+          set -eu
+          {
+            printf 'schema\taici-native-consumer-v1\n'
+            printf 'consumer\tisomorphisms/ncurses\n'
+            printf 'consumer_revision\t%s\n' "$(git -C consumer rev-parse HEAD)"
+            printf 'suite_revision\t%s\n' "$(git -C shared-aici rev-parse HEAD)"
+            printf 'scope\tstandalone-libc-platform-probes\n'
+            printf 'ncurses_pty_acceptance\tSEPARATE_WORKFLOW_REQUIRED\n'
+            printf 'android_execution\tNOT_RUN\n'
+            printf 'physical_device\tNOT_ESTABLISHED\n'
+          } > "$RUNNER_TEMP/$OUTPUT_NAME/consumer.tsv"
+      - name: Retain platform artifacts and available host receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ncurses-native-${{ matrix.target }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/${{ env.OUTPUT_NAME }}/
+          if-no-files-found: error
