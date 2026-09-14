@@ -12,17 +12,24 @@ permissions:
 
 jobs:
   linux-glibc-wide:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, linux, debian]
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - name: Verify Debian execution environment
+      - name: Verify Ubuntu execution environment
         shell: bash
         run: |
           set -eu
           . /etc/os-release
-          test "$ID" = debian
-          for program in cc make awk git tic; do command -v "$program"; done
+          test "$ID" = ubuntu
+          test "$(uname -m)" = x86_64
+
+      - name: Install host build prerequisites
+        shell: bash
+        run: |
+          set -eux
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential ncurses-bin
 
       - uses: actions/checkout@v4
         with:
@@ -95,6 +102,6 @@ jobs:
       - name: Record scope
         run: |
           printf '%s\n' \
-            'execution environment: Debian/glibc' \
+            'execution environment: GitHub-hosted Ubuntu 24.04/glibc' \
             'exercised: existing smoke plus controlled PTY UTF-8 input/output, bounded timeout, tty restoration' \
             'this is not Android/Bionic execution or physical-device acceptance'
