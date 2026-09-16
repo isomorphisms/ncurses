@@ -13,7 +13,7 @@ permissions:
 jobs:
   x86_64-emulator:
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 15
     env:
       EXPECTED_NDK_REVISION: 27.3.13750724
       SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -76,18 +76,55 @@ jobs:
       - name: Boot Android emulator
         shell: bash
         run: |
-          set -eux
+          set -euo pipefail
+          log="$RUNNER_TEMP/emulator.log"
+          emulator -accel-check | tee "$RUNNER_TEMP/emulator-accel.txt" || true
           nohup emulator \
             -avd ncurses-runtime \
             -no-window -no-audio -no-boot-anim -no-snapshot \
             -gpu swiftshader_indirect -no-metrics \
-            > "$RUNNER_TEMP/emulator.log" 2>&1 &
-          adb wait-for-device
-          timeout 180 bash -c '
-            until [ "$(adb shell getprop sys.boot_completed | tr -d "\r")" = 1 ]; do
-              sleep 2
-            done
-          '
+            > "$log" 2>&1 &
+          emulator_pid=$!
+          printf 'emulator_pid=%s\n' "$emulator_pid"
+
+          adb_ready=0
+          for attempt in $(seq 1 60); do
+            if ! kill -0 "$emulator_pid" 2>/dev/null; then
+              echo 'emulator exited before ADB became ready' >&2
+              cat "$log" >&2
+              exit 1
+            fi
+            if [ "$(adb get-state 2>/dev/null || true)" = device ]; then
+              adb_ready=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$adb_ready" -ne 1 ]; then
+            echo 'ADB device did not appear' >&2
+            cat "$log" >&2
+            exit 1
+          fi
+
+          boot_ready=0
+          for attempt in $(seq 1 90); do
+            if [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]; then
+              boot_ready=1
+              break
+            fi
+            if ! kill -0 "$emulator_pid" 2>/dev/null; then
+              echo 'emulator exited before Android completed boot' >&2
+              cat "$log" >&2
+              exit 1
+            fi
+            sleep 2
+          done
+          if [ "$boot_ready" -ne 1 ]; then
+            echo 'Android did not complete boot' >&2
+            cat "$log" >&2
+            exit 1
+          fi
+
           test "$(adb shell getprop ro.kernel.qemu | tr -d '\r')" = 1
           adb shell getprop ro.build.fingerprint
           adb shell getprop ro.product.cpu.abilist
@@ -121,6 +158,7 @@ jobs:
             _/bionic-validation/x86_64/bundle/executable-elf.txt
             _/bionic-validation/x86_64/bundle/SHA256SUMS
             ${{ runner.temp }}/emulator.log
+            ${{ runner.temp }}/emulator-accel.txt
           if-no-files-found: warn
 
       - name: Record acceptance boundary
