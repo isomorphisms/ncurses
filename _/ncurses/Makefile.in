@@ -190,7 +190,6 @@ HEADER_DEPS	= @INTERNALS_HDR@ \
 	$(INCDIR)/nc_string.h \
 	$(INCDIR)/nc_termios.h \
 	$(INCDIR)/nc_tparm.h \
-	$(INCDIR)/nc_win32.h \
 	$(INCDIR)/term_entry.h \
 	$(srcdir)/curses.priv.h \
 	$(srcdir)/new_pair.h \
@@ -204,7 +203,6 @@ TEST_PROGS = \
 	captoinfo$x \
 	hardscroll$x \
 	hashmap$x \
-	lib_mvcur$x \
 	link_test$x \
 	report_hashing$x
 
@@ -215,7 +213,6 @@ serial	 = $(srcdir)/tty
 tinfo	 = $(srcdir)/tinfo
 trace	 = $(srcdir)/trace
 wide	 = $(srcdir)/widechar
-win32con = $(srcdir)/win32con
 
 ################################################################################
 
@@ -279,16 +276,16 @@ report_offsets$(BUILD_EXEEXT) : \
 		../include/hashsize.h \
 		$(tinfo)/MKcaptab.sh \
 		$(tinfo)/MKcaptab.awk
-	$(SHELL) -e $(tinfo)/MKcaptab.sh $(AWK) $(USE_BIG_STRINGS) $(tinfo)/MKcaptab.awk $(CAPLIST) > $@
+	$(SHELL) -e $(tinfo)/MKcaptab.sh $(AWK) $(USE_BIG_STRINGS) $(tinfo)/MKcaptab.awk $(CAPLIST) >$@
 
 ./comp_userdefs.c: \
 		make_hash$(BUILD_EXEEXT) \
 		../include/hashsize.h \
 		$(tinfo)/MKuserdefs.sh
-	$(SHELL) -e $(tinfo)/MKuserdefs.sh $(AWK) $(USE_BIG_STRINGS) $(CAPLIST) > $@
+	$(SHELL) -e $(tinfo)/MKuserdefs.sh $(AWK) $(USE_BIG_STRINGS) $(CAPLIST) >$@
 
 ./lib_keyname.c: keys.list $(base)/MKkeyname.awk
-	$(AWK) -f $(base)/MKkeyname.awk bigstrings=$(USE_BIG_STRINGS) keys.list > $@
+	$(AWK) -f $(base)/MKkeyname.awk bigstrings=$(USE_BIG_STRINGS) keys.list >$@
 
 ./codes.c: $(tinfo)/MKcodes.awk
 	$(AWK) -f $(tinfo)/MKcodes.awk bigstrings=$(USE_BIG_STRINGS) $(CAPLIST) >$@
@@ -344,16 +341,9 @@ hardscroll$x : $(serial)/hardscroll.c $(TEST_DEPS)
 hashmap$x : $(serial)/hashmap.c $(serial)/hardscroll.c $(TEST_DEPS)
 	@ECHO_LD@ $(LIBTOOL_LINK) -o $@ $(CFLAGS_DEFAULT) -DHASHDEBUG $(serial)/hashmap.c $(serial)/hardscroll.c $(TEST_LDFLAGS)
 
-lib_mvcur$x : $(serial)/lib_mvcur.c $(TEST_DEPS) \
-		../@DFT_OBJ_SUBDIR@/dump_entry$o
-	@ECHO_LD@ $(LIBTOOL_LINK) -o $@ $(CFLAGS_DEFAULT) -DNCURSES_TEST -I$(serial)/../../progs $(serial)/lib_mvcur.c ../@DFT_OBJ_SUBDIR@/dump_entry$o $(TEST_LDFLAGS)
-
 link_test$x : ./link_test.c $(TEST_DEPS) \
 		../@DFT_OBJ_SUBDIR@/link_test$o
 	@ECHO_LD@ $(CC) -o $@ $(CFLAGS_DEFAULT) ../@DFT_OBJ_SUBDIR@/link_test$o $(TEST_LDFLAGS)
-
-../@DFT_OBJ_SUBDIR@/dump_entry$o:
-	( cd ../progs && $(MAKE) ../@DFT_OBJ_SUBDIR@/dump_entry$o )
 
 report_hashing$x : \
 		$(srcdir)/curses.priv.h \

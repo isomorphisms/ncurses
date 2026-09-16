@@ -1,67 +1,97 @@
 # Build and test receipts
 
-These receipts distinguish what actually ran from target claims.  In particular, Linux/glibc evidence is not Android/Bionic evidence.
+This file records what actually ran.  Keep compile, host runtime, Android emulator runtime, physical-device runtime, and interactive-terminal acceptance separate.
+
+## Evidence levels
+
+- **source inspected** — ownership/call paths were traced, but nothing was compiled or run.
+- **built** — the named source/configuration compiled and linked for the named target.
+- **host tested** — the named executable ran on the Linux/glibc CI host.
+- **Android emulator tested** — the named Android executable ran under the recorded emulator image.
+- **physical-device tested** — the named Android executable ran on a named physical device.
+- **interactive accepted** — terminal/IME/resize behavior was observed in an actual interactive terminal application.
+
+Do not promote one level into another.
 
 ## Linux/glibc wide-character core
 
-A GitHub Ubuntu 24.04 x86-64/glibc runner configured the inherited build from `_` with:
+The `modern core` workflow runs on GitHub-hosted Ubuntu 24.04 x86-64/glibc.  It configures the inherited build from `_` with wide-character support while disabling removed Ada/C++ bindings and the broad inherited test tree.
 
-```sh
-./configure \
-    --without-ada \
-    --without-cxx \
-    --without-cxx-binding \
-    --without-debug \
-    --without-manpages \
-    --without-tests \
-    --enable-widec
-```
+The selected source modules are `ncurses progs`.  The workflow builds the wide-character curses core and ordinary programs and then compiles and runs the focused PTY harness against the just-built library.
 
-The configuration selected the surviving `ncurses progs` source modules.  `make -j2` built the wide-character curses core and ordinary programs successfully.
+The focused harness exercises:
 
-The source-manifest cleanup commit `24b029af76d8bb0557e6736b3de8da3b0d9b10ef`, which removes the dead Win32 source groups after their implementations were deleted, passed the complete `modern core` workflow.  Therefore the manifest cleanup did not break the supported Linux/glibc source selection.
+- a real pseudo-terminal;
+- `newterm` and terminal-mode setup;
+- ordinary WINDOW output;
+- wide UTF-8 output, including `λ`;
+- `wrefresh` / `doupdate` terminal emission;
+- terminfo-derived cursor-up input decoded by `wgetch` as `KEY_UP`;
+- ordinary character input;
+- bounded empty-input timeout behavior;
+- explicit resize state;
+- terminal-mode restoration at normal exit.
 
-## Focused pty execution
+The one-PTY form first passed at `fa011bb00cf2ca73066d1923c3426ff869a282d6`.  The workflow remained green after the later source-manifest and documentation cleanup.
 
-`.github/modern_core_smoke.c` runs against the just-built library on a real pseudo-terminal.  It exercises:
+## Android/Bionic ARM builds
 
-- `newterm("xterm-256color", ...)` on a pty;
-- raw/noecho/keypad input setup;
-- ordinary WINDOW text output;
-- a wide `λ` written through `setcchar`/`wadd_wch`;
-- `wrefresh`, therefore the WINDOW -> desired screen -> `doupdate` terminal-output path;
-- terminfo lookup of the cursor-up key sequence;
-- injection of that sequence plus `q` through the pty master;
-- `wgetch` decoding to `KEY_UP` and then ordinary character `q`;
-- `resizeterm(30, 100)` and the resulting `LINES`/`COLS` state;
-- capture of emitted terminal output containing the WINDOW text.
+PR #2 introduced Android/Bionic cross-build receipts.  PR #3 then tightened the boundary so the focused PTY executable is explicitly linked against the just-built archive and packaged with its exact terminfo fixture and provenance.
 
-The one-pty version first passed at exact commit `fa011bb00cf2ca73066d1923c3426ff869a282d6`.  The same smoke remained green after the architecture documentation and after the dead Win32 source-manifest entries were removed; the pull-request workflow for `24b029af76d8bb0557e6736b3de8da3b0d9b10ef` completed successfully.
+At exact PR #3 head `839e98129b17d54e9442f6679bb3840328de5b49`, the current Bionic validation path passed for:
 
-The input waits are bounded so failure to decode a terminal sequence returns a test failure rather than hanging CI.
+- ARMv7a, API 24;
+- AArch64, API 24.
 
-## Earlier failures retained as evidence
+The jobs use Android NDK `27.3.13750724`.  They verify the target archive members and the linked executable's ELF class/machine, PIE/interpreter/dependencies, bundle checksums, and exact-source provenance.
 
-The first build attempt failed before configuration because upstream `configure` mines `NCURSES_MAJOR`, `NCURSES_MINOR`, and `NCURSES_PATCH` from `dist.mk`.  The release/distribution body of `dist.mk` remains deleted; the branch restored only those three version values as temporary build metadata.
+This is **Android/Bionic build/link evidence for ARMv7a and AArch64**.  Those ARM bundles have not been executed on Android by these receipts.
 
-An earlier attempt to use `make -C ncurses test_progs` failed while linking ncurses' embedded historical `lib_mvcur` optimizer tester.  That tester deliberately defined its own `tputs`, `putp`, `_nc_outch`, and `delay_output` while the target also linked the complete library containing the real definitions.  This was a test-harness linker collision, not a normal library build failure.  The embedded tester was subsequently removed with the historical cursor optimizer it measured.
+## Android emulator runtime
 
-The first focused pty test incorrectly used separate ptys for input and output.  ncurses initialized terminal modes on the output terminal, leaving the unrelated input pty with unsuitable line discipline; bounded `wgetch` calls returned `ERR`.  The corrected test uses duplicate slave descriptors from one pty, matching an ordinary terminal, and is green.
+PR #4 added a distinct x86_64 Android-emulator runtime path instead of relabeling the ARM cross-builds as runtime evidence.
 
-## Android/Bionic cross-build
+At exact PR #4 head `27041bf6dbb79efed955e02e9a2442279f62984e`, run `35046978535` booted an Android 14 x86_64 emulator under KVM, pushed the checksummed Bionic bundle, and ran the PTY harness inside Android.
 
-`.github/workflows/bionic-core.yml` cross-compiles the same pruned wide-character core with the Android NDK for API 24.  It uses ncurses' native build compiler for build-time source generators while the target compiler and binutils come from the NDK.
+The retained runtime receipt records:
 
-The configuration also carries the two Bionic assumptions used by Termux's ncurses recipe:
+- `runtime_libc=bionic`;
+- `modern_core_pty=pass`;
+- `exit_status=0`;
+- `android_pty_runtime=pass`;
+- emulator context (`ro.kernel.qemu=1`);
+- `interactive_device_acceptance=not_established`.
 
-- `ac_cv_header_locale_h=no`
-- `am_cv_langinfo_codeset=no`
+The emulator artifact is `ncurses-android-emulator-35046978535` (artifact ID `10427910228`).
 
-At exact commit `fb1dd792d66e98ce08c2c91296e8ea4eb7832e0e`, both matrix targets completed successfully:
+This establishes **private-PTY execution on that Android 14 x86_64 emulator image**.  It does not establish ARM runtime behavior or physical-device behavior.
 
-- ARMv7a using `armv7a-linux-androideabi24` with Autoconf host `arm-linux-androideabi`;
-- AArch64 using `aarch64-linux-android24` with Autoconf host `aarch64-linux-android`.
+## Still unclaimed
 
-For both targets, configure succeeded, `make -j2` completed, `lib/libncursesw.a` was produced, and `llvm-readelf` verified that the archive contains the requested target machine rather than host x86-64 objects.
+The current receipts do **not** establish:
 
-This is Bionic **compile evidence only**.  No Android emulator and no physical Android device executed the resulting library, so there is still no Android runtime or device acceptance receipt.
+- ARMv7a runtime on Android;
+- AArch64 runtime on Android;
+- physical phone or tablet execution;
+- interactive terminal-app behavior;
+- IME/on-screen-keyboard behavior;
+- genuine SIGWINCH / `KEY_RESIZE` delivery from an external window-size change;
+- rotation behavior;
+- mouse behavior;
+- suspend/resume behavior;
+- emoji/grapheme-width correctness;
+- universal Android compatibility.
+
+Those must remain separate receipts if pursued.
+
+## Historical failures retained as evidence
+
+The first Linux build attempt failed before configuration because inherited `configure` mines `NCURSES_MAJOR`, `NCURSES_MINOR`, and `NCURSES_PATCH` from `dist.mk`.  The release/distribution body remains deleted; a tiny `dist.mk` containing only those version values is retained temporarily as build metadata.
+
+An early `make -C ncurses test_progs` attempt failed while linking the inherited embedded `lib_mvcur` optimizer tester.  That tester supplied its own output symbols while also linking the complete library containing the real definitions.  This was a historical test-harness collision, not a normal core build failure; the tester was removed with the optimizer it measured.
+
+The first focused PTY test incorrectly used unrelated input/output PTYs.  Bounded `wgetch` calls returned `ERR`.  The corrected harness uses the two descriptors of one terminal PTY and is green.
+
+## Current merged baseline
+
+`source-first-layout` currently includes the pruning work plus PRs #2, #3, and #4.  The latest merge at the time of this receipt refresh is `da8525216cb37d383cfd4905611a3ddbcb46b773` (`Add Android emulator runtime receipt`).

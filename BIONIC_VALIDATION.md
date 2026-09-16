@@ -1,57 +1,43 @@
-# Next Android/Bionic validation
+# Android/Bionic validation record
 
-## Baseline and scope
+## Current baseline
 
-PR #1's pruning was merged into `source-first-layout`, not upstream `master`.
-PR #2 subsequently merged at `d1f5729b372b5479eb6ba5c44291393f5f5b6dd7` on
-2026-09-11. Its ARMv7a and AArch64 API 24 cross-builds passed. The existing
-`RECEIPTS.md` records compile evidence, not Android execution.
+The pruning work from PR #1 is merged into `source-first-layout`.  Subsequent validation landed in three stages:
 
-The later PR #2 head `c7a594551b5334bfe2a60749af8b97755ce1fa22` also has passing
-ARMv7a, AArch64 and glibc checks. The AArch64 job log identifies NDK
-**27.3.13750724**. Retain that known baseline instead of upgrading toolchains
-while adding a runtime test. The old build already linked ordinary programs;
-the missing link test is the actual curses screen/input PTY harness.
+- PR #2 — ARMv7a and AArch64 Android/Bionic cross-build receipts;
+- PR #3 — explicit PTY executable linkage, bundle/provenance checks and host execution of the same focused harness;
+- PR #4 — Android 14 x86_64 emulator execution of a checksummed Bionic bundle.
 
-Sources: [PR #2](https://github.com/isomorphisms/ncurses/pull/2),
-[observed AArch64 job](https://github.com/isomorphisms/ncurses/actions/runs/34656071576/job/103448647286),
-[NDK cross-build guidance](https://developer.android.com/ndk/guides/other_build_systems),
-[Bionic API/locale notes](https://android.googlesource.com/platform/bionic/+/HEAD/docs/status.md).
+The current merged `source-first-layout` head at this refresh is `da8525216cb37d383cfd4905611a3ddbcb46b773`.
 
-No inherited implementation, removed subsystem, capability table or historical
-optimizer is restored by this change. `hardscroll`/`hashmap` remain as merged.
-The existing smoke is retained. The new harness is validation code, not a
-replacement curses implementation.
+No removed ncurses subsystem, historical optimizer, platform backend or language binding was restored to obtain these receipts.
 
-## Acceptance levels
+## Evidence matrix
 
-| Evidence | What it establishes | What it does not establish |
+| Evidence | Established | Not established |
 | --- | --- | --- |
-| Existing PR #2 cross-build | Two Android ABI builds of the pruned source | Android execution |
-| New build, link and ELF checks | The screen/input harness links this exact archive into an Android PIE, with the expected ABI, loader and platform dependencies | Successful startup or PTY behavior |
-| New harness on GitHub-hosted Ubuntu/glibc | The test itself exercises the host-built pruned core | Bionic behavior |
-| Harness in an Android emulator | That image's Bionic/PTY execution | Physical phone/tablet behavior |
-| Harness on a named physical device | That device's private-PTY execution for the checks below | Interactive renderer, keyboard/IME or real resize acceptance |
-| Separate interactive device observations | The explicitly recorded terminal/version/device behaviors | Universal Android compatibility |
+| Ubuntu/glibc wide build | Surviving source configures and builds on the host | Bionic behavior |
+| Ubuntu/glibc PTY harness | Core screen/input PTY behavior runs against the just-built pruned library | Android behavior |
+| ARMv7a Bionic build/link | API-24 ARMv7a archive and PTY executable are target-built and ELF/provenance checked | ARMv7a Android execution |
+| AArch64 Bionic build/link | API-24 AArch64 archive and PTY executable are target-built and ELF/provenance checked | AArch64 Android execution |
+| Android 14 x86_64 emulator PTY run | The x86_64 bundle executes under Bionic in that emulator and the private-PTY harness passes | ARM runtime or physical-device behavior |
+| Future physical-device PTY run | Private-PTY behavior on the named physical device | Interactive terminal/IME/resize behavior |
+| Future interactive receipt | Explicitly observed behavior in a named terminal application and device context | Universal Android compatibility |
 
-The new path needs its own exact-source checks; shell/YAML parsing or a compiled
-terminfo fixture is not a C build receipt, and a queued/skipped job is not a
-pass. Hosted-Ubuntu build receipts remain separate from Android execution.
+## Toolchain baseline
 
-## Build a fresh bundle
+The Bionic path pins Android NDK `27.3.13750724` (r27d).  Keep that baseline stable while interpreting the existing receipts; upgrading the NDK is a separate change.
 
-The host and Bionic workflows use GitHub-hosted `ubuntu-24.04`, verify the
-Ubuntu/x86-64 execution environment, and explicitly check out the PR head (or
-push SHA) rather than silently attributing a synthetic merge checkout to the
-head commit.
+The cross-build uses a native compiler for ncurses build-time generators and the NDK compiler/binutils for target objects.  The two cached configuration choices retained from the known Android recipe are:
 
-The workflows install their ordinary Ubuntu build prerequisites themselves.
-The Bionic cross-build workflow downloads Android NDK r27d, verifies the pinned
-archive checksum and exact revision `27.3.13750724`, and exports that selected
-NDK explicitly. No self-hosted runner registration or external runner
-provisioning is required.
+- `ac_cv_header_locale_h=no`
+- `am_cv_langinfo_codeset=no`
 
-From a clean checkout of the validation branch on a compatible Ubuntu host:
+They are build configuration choices, not assertions that current Bionic lacks the corresponding headers/interfaces.  UTF-8 behavior is checked by execution where execution evidence exists.
+
+## ARMv7a and AArch64 bundle construction
+
+From a clean checkout with the pinned NDK selected, the validation script supports:
 
 ```sh
 export ANDROID_NDK_HOME=/path/to/android-ndk-r27d
@@ -60,71 +46,100 @@ bash .github/build_bionic_smoke.sh armv7a
 bash .github/build_bionic_smoke.sh aarch64
 ```
 
-Each ABI gets a new directory under `_/bionic-validation/`; an existing build
-directory is rejected to prevent stale acceptance. The native compiler runs
-source generators; the NDK compiler and binutils build target code. The two
-PR #2 cache assumptions are retained for comparison:
-`ac_cv_header_locale_h=no` and `am_cv_langinfo_codeset=no`. They are configuration
-choices, not a claim that Bionic lacks `locale.h`. Actual UTF-8 behavior must
-pass the execution checks.
+Each ABI gets a fresh build directory under `_/bionic-validation/`; stale directories are rejected.
 
-The script builds the surviving modules, links an explicit `libncursesw.a`
-path into `modern_core_smoke`, and inspects every reported archive member's
-machine/class, the executable's machine/class/PIE type, Android interpreter,
-and dynamic dependencies. No system/Termux curses can replace that explicit
-archive. The Android link does not import glibc's `-lutil`: Bionic provides
-`openpty` in libc at the API level used here.
+The script:
 
-The workflow retains `bundle/`, configure/make logs, `config.log`, the archive
-ELF report and link map. The bundle includes a uniquely named, self-contained
-terminfo fixture, build provenance, checksums and a runtime runner. Native
-`tic` compiles data; it is not an Android execution receipt.
+- configures and builds the surviving wide-character core;
+- links `modern_core_smoke` using the explicit just-built `libncursesw.a`;
+- does not substitute a system/Termux ncurses library;
+- checks archive-member target architecture;
+- checks executable ELF class/machine, PIE type, Android interpreter and dependencies;
+- creates a self-contained terminfo fixture;
+- records source/toolchain provenance and checksums;
+- packages a runtime runner and build receipt.
 
-## Execute on Android, separately
+The Android link does not use glibc's `-lutil`; Bionic supplies `openpty` from libc for the API level used here.
 
-Use the artifact matching the Android userspace ABI. Copy the contents of its
-`bundle/` into a fresh test directory under native Termux's home, or a selected
-Android device/emulator's `/data/local/tmp`. Do not replace installed ncurses
-or install a compiler on the phone for this test. No bundle is advertised as
-available until its producing job succeeds.
+At exact PR #3 head `839e98129b17d54e9442f6679bb3840328de5b49`, ARMv7a and AArch64 build/link validation was green.
 
-From inside that bundle directory on the selected Android environment:
+## Focused PTY behavior
+
+The harness is deliberately narrower than an interactive terminal acceptance test.  It exercises:
+
+- one PTY backing input and output;
+- raw/noecho/keypad setup;
+- WINDOW output;
+- `wrefresh` / `doupdate` terminal emission;
+- UTF-8 lambda output bytes;
+- terminfo-derived `KEY_UP` recognition;
+- ordinary `q` input;
+- UTF-8 input through `wget_wch`;
+- bounded empty-input timeout;
+- explicit `resizeterm` state;
+- `endwin` terminal-mode restoration.
+
+The test has bounded waits and an overall alarm so an input failure produces a receipt rather than hanging indefinitely.
+
+## Android emulator runtime receipt
+
+PR #4 added an x86_64 Bionic bundle and a hosted Android-emulator job specifically for runtime evidence.
+
+At exact PR #4 head `27041bf6dbb79efed955e02e9a2442279f62984e`, run `35046978535`:
+
+1. booted an Android 14 x86_64 emulator under KVM;
+2. pushed the exact-source checksummed bundle;
+3. ran `sh ./run.sh emulator` inside Android;
+4. pulled the runtime receipt and supporting logs;
+5. required a Bionic runtime and explicit emulator context.
+
+The recorded result includes:
+
+- `runtime_libc=bionic`;
+- `modern_core_pty=pass`;
+- `exit_status=0`;
+- `android_pty_runtime=pass`;
+- `context_operator_declared=emulator`;
+- `ro.kernel.qemu=1`;
+- `interactive_device_acceptance=not_established`.
+
+The retained artifact is `ncurses-android-emulator-35046978535` (artifact ID `10427910228`).
+
+This closes the generic "no Android execution" gap, but only for the named x86_64 emulator image.
+
+## Physical Android execution
+
+The ARMv7a and AArch64 bundles remain candidates for physical-device testing.  A physical run should execute an exact successful bundle without recompiling or silently substituting installed ncurses code.
+
+Inside the selected bundle directory:
 
 ```sh
-# Choose the truthful context. Neither label is inferred from a host build.
 sh ./run.sh physical
-# OR, when actually running on an Android emulator:
-sh ./run.sh emulator
 ```
 
-For ADB, select the device explicitly with `adb -s "$ANDROID_SERIAL"`; do not
-implicitly choose whichever device happens to be attached. The program
-creates its own PTY, so allocating an ADB terminal is not the test mechanism.
+The resulting runtime directory should remain paired with the original build receipt and checksums.
 
-The runner verifies the bundle hashes, requires Android API >= 24, records
-API/model/ABI list/build fingerprint and binary SHA, and writes each invocation
-to a new `runtime.XXXXXX/` directory. Context is operator-declared; an emulator
-property can contradict a physical label, but its absence does not prove
-physical hardware. It does not collect device serial numbers.
+A physical private-PTY pass would establish the focused PTY behavior on that named device/ABI/API.  It would still not establish interactive terminal application behavior.
 
-A pass requires process exit zero, the Bionic build marker, and completion of:
+## Interactive acceptance remains separate
 
-- one PTY backing input and output, with raw/noecho/keypad setup;
-- WINDOW output and refresh/doupdate, including emitted UTF-8 lambda bytes;
-- terminfo-derived KEY_UP, ordinary `q`, and UTF-8 input via `wget_wch`;
-- an empty-input timeout, explicit `resizeterm` state, and `endwin` tty restoration.
+A later interactive receipt must name the terminal application/version, actual `TERM` and terminfo source, device/ABI/API and exact tested binary, and record the observed behavior rather than inferring it from a private PTY.
 
-The complete test has a ten-second alarm; input waits are also bounded.
-The fixture is deliberately not a complete xterm compatibility test. Keep
-`context.txt`, `output.txt` and `runtime-receipt.txt` together with the original
-bundle/build receipt. The old `android_runtime=not_run` field in the build
-receipt describes the build stage; only the separate runtime receipt reports
-subsequent execution.
+Still outside the current acceptance boundary:
 
-Even a physical private-PTY pass leaves **interactive device acceptance
-unestablished**. That later receipt must name the terminal app/version, actual
-TERM and terminfo source, device/ABI/API, exact binary, and observed interactive
-redraw, cursor motion, UTF-8 input/output, genuine window-size changes, and
-normal exit/interrupt recovery. Calling `resizeterm` is not SIGWINCH, rotation,
-or KEY_RESIZE delivery evidence. Emoji/grapheme width, mouse input and
-suspend/resume are also outside this focused smoke unless separately tested.
+- IME/on-screen-keyboard behavior;
+- genuine externally delivered SIGWINCH / `KEY_RESIZE`;
+- rotation/window resizing;
+- interactive redraw and cursor observations;
+- normal recovery after user interrupt/suspend;
+- mouse input;
+- emoji/grapheme width;
+- broader terminal-compatibility coverage.
+
+`resizeterm()` state in the focused harness is not evidence of genuine resize delivery.
+
+## Receipt rule
+
+The build receipt field `android_runtime=not_run` describes the build stage that produced a bundle.  It is not retroactively rewritten when a bundle is later executed.  Runtime evidence lives in a separate runtime receipt so build and execution provenance stay distinguishable.
+
+See `RECEIPTS.md` for the concise current acceptance ledger.
