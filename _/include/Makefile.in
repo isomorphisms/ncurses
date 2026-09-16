@@ -139,7 +139,7 @@ parametrized.h: $(CAPLIST) \
 		$(srcdir)/MKparametrized.sh
 	AWK=$(AWK) $(SHELL) $(srcdir)/MKparametrized.sh $(CAPLIST) >$@
 
-# This is required by pthread.h on MinGW
+# Some generated/build-time includes expect this placeholder header to exist.
 config.h:
 	touch $@
 
