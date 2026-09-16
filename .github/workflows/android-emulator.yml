@@ -30,7 +30,6 @@ jobs:
           command -v sdkmanager
           command -v avdmanager
           command -v adb
-          command -v emulator
 
       - name: Install build prerequisites
         shell: bash
@@ -69,6 +68,7 @@ jobs:
           set -eux
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager 'platform-tools' 'emulator' "$SYSTEM_IMAGE"
+          command -v emulator
           echo no | avdmanager create avd --force \
             --name ncurses-runtime \
             --package "$SYSTEM_IMAGE" \
