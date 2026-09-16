@@ -34,6 +34,7 @@ jobs:
             "$ANDROID_HOME/cmdline-tools/latest/bin" \
             "$ANDROID_HOME/platform-tools" \
             "$ANDROID_HOME/emulator" >> "$GITHUB_PATH"
+          printf 'ANDROID_AVD_HOME=%s/android-avd\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
 
       - name: Install build prerequisites
         shell: bash
@@ -67,10 +68,15 @@ jobs:
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager 'emulator' "$SYSTEM_IMAGE"
           test -x "$ANDROID_HOME/emulator/emulator"
+          mkdir -p "$ANDROID_AVD_HOME"
           echo no | avdmanager create avd --force \
             --name ncurses-runtime \
+            --path "$ANDROID_AVD_HOME/ncurses-runtime.avd" \
             --package "$SYSTEM_IMAGE" \
             --device pixel_2
+          test -f "$ANDROID_AVD_HOME/ncurses-runtime.ini"
+          test -d "$ANDROID_AVD_HOME/ncurses-runtime.avd"
+          avdmanager list avd
           if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
 
       - name: Boot Android emulator
@@ -79,6 +85,8 @@ jobs:
           set -euo pipefail
           log="$RUNNER_TEMP/emulator.log"
           emulator -accel-check | tee "$RUNNER_TEMP/emulator-accel.txt" || true
+          emulator -list-avds | tee "$RUNNER_TEMP/emulator-avds.txt"
+          grep -qx 'ncurses-runtime' "$RUNNER_TEMP/emulator-avds.txt"
           nohup emulator \
             -avd ncurses-runtime \
             -no-window -no-audio -no-boot-anim -no-snapshot \
@@ -159,6 +167,7 @@ jobs:
             _/bionic-validation/x86_64/bundle/SHA256SUMS
             ${{ runner.temp }}/emulator.log
             ${{ runner.temp }}/emulator-accel.txt
+            ${{ runner.temp }}/emulator-avds.txt
           if-no-files-found: warn
 
       - name: Record acceptance boundary
