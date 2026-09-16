@@ -71,15 +71,17 @@ Current evidence includes Linux/glibc host execution, ARMv7a/AArch64 Bionic buil
 
 **Removed:** native Win32 console implementation sources, Win32/MinGW-specific implementation headers and the MinGW README; dead Win32 source-manifest groups were also removed.
 
+A later tidy pass removed the leftover `include/nc_win32.h` private header, removed it and the deleted `win32con` source directory from `ncurses/Makefile.in`, and removed the synthetic Win32/MinGW termios compatibility layer from `nc_termios.h`.
+
 **Original problem:** drive a native Windows console rather than the Unix tty/escape-sequence path and adapt ncurses to MinGW/MSVC environments.
 
 **Why outside target:** Linux/glibc and Android/Bionic use the POSIX tty/PTY + terminal-sequence path.
 
-**Replacement:** terminal setup, termios/PTY handling, `tty_update`, `lib_mvcur`, and terminfo-selected sequences.
+**Replacement:** terminal setup, POSIX termios/PTY handling, `tty_update`, `lib_mvcur`, and terminfo-selected sequences.
 
-**Remaining residue:** private/configuration headers and Makefile/configure templates still contain some Windows-oriented declarations/names such as `nc_win32.h`.  These are cleanup candidates only after the selected Linux/Bionic builds demonstrate they are unused.
+**Remaining residue:** `curses.priv.h`, configure inputs/generated configure, and other broad portability scaffolding still contain Windows/MinGW/MSVC conditionals.  Remove those separately with the build-world cleanup rather than disguising them as supported targets.
 
-**Archaeology:** history for `ncurses/win32con`, `ncurses/tinfo/lib_win32*`, MinGW headers, `include/nc_win32.h`, and associated configure branches.
+**Archaeology:** history for `ncurses/win32con`, `ncurses/tinfo/lib_win32*`, MinGW headers, the removed `include/nc_win32.h`, and associated configure branches.
 
 ## OS/2 and EMX
 
@@ -132,12 +134,13 @@ Inherited Autoconf/generated build machinery remains much broader than the sourc
 - Ada compiler/binding probes and substitutions;
 - C++ binding/compiler compatibility probes;
 - textual form/menu/panel module selection;
-- Windows/MinGW/MSVC/OS2 branches;
+- Windows/MinGW/MSVC/OS2 branches in configure/private portability code;
 - proprietary/old-Unix compiler workarounds;
-- Win32 dependency names in templates;
 - generated `configure` carrying the same historical selection world.
 
-These branches are not counted as supported targets.  Current receipts demonstrate that the modern source set selects/builds as `ncurses progs` on Linux/glibc and cross-builds for Android/Bionic.
+The dead `nc_win32.h` Makefile dependency and dead `win32con` directory variable have been removed; the stale embedded `lib_mvcur` test target was also retired after the tester itself was deleted.
+
+These historical branches are not counted as supported targets.  Current receipts demonstrate that the modern source set selects/builds as `ncurses progs` on Linux/glibc and cross-builds for Android/Bionic.
 
 Do not replace this residue with generic no-op abstraction layers.  Remove one dead build family at a time and keep generated/configure inputs consistent.
 
@@ -187,6 +190,8 @@ Its cost model was expressed in old transmission-time terms, including tty baud 
 - auto-left-margin backward wrapping;
 - embedded optimizer/timing test program.
 
+The follow-up tidy pass also removed the stale Makefile target which still attempted to build that deleted embedded tester.
+
 ## Surviving cursor algorithm
 
     current physical position + desired position
@@ -218,7 +223,7 @@ This is outside the intended conceptual core, but it is still wired into `doupda
 
 Therefore `hardscroll.c`, `hashmap.c`, their hash/old-line SCREEN state, updater call sites and save/restore dependencies should be removed as one conceptual cut.
 
-Do not delete only the source files while leaving dead updater/state hooks.
+Do not delete only the source files while leaving dead updater/state hooks.  Their existing focused test targets are intentionally retained until that coupled mechanism is removed.
 
 ## Intended updater after that cut
 
@@ -285,8 +290,8 @@ See `RECEIPTS.md` and `BIONIC_VALIDATION.md` for the precise evidence boundary.
 - screen dump/restore compatibility;
 - legacy 8-bit coding mode;
 - obsolete compatibility aliases/entry points;
-- removed-library and old-platform branches in Autoconf/generated configure/Makefile templates;
-- residual Win32/OS2 private-header declarations;
+- removed-library and old-platform branches in Autoconf/generated configure/private headers;
+- remaining Windows/OS2 private portability conditionals after removal of the standalone Win32 header/termios shim;
 - serial/padding behavior in `tputs` itself, separate from the already-removed mvcur transmission-cost model.
 
 Each future cut should record the old problem, why it is outside target, the surviving replacement if any, test/inspection evidence and useful upstream file/function names.
