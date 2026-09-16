@@ -1,0 +1,182 @@
+name: Android emulator runtime
+
+on:
+  push:
+    branches: [source-first-layout]
+  pull_request:
+    branches: [source-first-layout]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  x86_64-emulator:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      EXPECTED_NDK_REVISION: 27.3.13750724
+      SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+      SYSTEM_IMAGE: system-images;android-34;default;x86_64
+    steps:
+      - name: Verify Ubuntu and Android SDK environment
+        shell: bash
+        run: |
+          set -eu
+          . /etc/os-release
+          test "$ID" = ubuntu
+          test "$(uname -m)" = x86_64
+          test "$ANDROID_HOME" = /usr/local/lib/android/sdk
+          test -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager"
+          test -x "$ANDROID_HOME/platform-tools/adb"
+          printf '%s\n' \
+            "$ANDROID_HOME/cmdline-tools/latest/bin" \
+            "$ANDROID_HOME/platform-tools" \
+            "$ANDROID_HOME/emulator" >> "$GITHUB_PATH"
+          printf 'ANDROID_AVD_HOME=%s/android-avd\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+
+      - name: Install build prerequisites
+        shell: bash
+        run: |
+          set -eux
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential ncurses-bin python3
+
+      - name: Verify pinned Android NDK r27d
+        shell: bash
+        run: |
+          set -eux
+          test -n "$ANDROID_NDK_HOME"
+          grep -F 'Pkg.Revision = 27.3.13750724' "$ANDROID_NDK_HOME/source.properties"
+          test -x "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
+
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Build x86_64 Bionic runtime bundle
+        shell: bash
+        run: bash .github/build_bionic_smoke.sh x86_64
+
+      - name: Install Android emulator image
+        shell: bash
+        run: |
+          set -eux
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager 'emulator' "$SYSTEM_IMAGE"
+          test -x "$ANDROID_HOME/emulator/emulator"
+          mkdir -p "$ANDROID_AVD_HOME"
+          echo no | avdmanager create avd --force \
+            --name ncurses-runtime \
+            --path "$ANDROID_AVD_HOME/ncurses-runtime.avd" \
+            --package "$SYSTEM_IMAGE" \
+            --device pixel_2
+          test -f "$ANDROID_AVD_HOME/ncurses-runtime.ini"
+          test -d "$ANDROID_AVD_HOME/ncurses-runtime.avd"
+          avdmanager list avd
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+
+      - name: Boot Android emulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/emulator.log"
+          emulator -accel-check | tee "$RUNNER_TEMP/emulator-accel.txt" || true
+          emulator -list-avds | tee "$RUNNER_TEMP/emulator-avds.txt"
+          grep -qx 'ncurses-runtime' "$RUNNER_TEMP/emulator-avds.txt"
+          nohup emulator \
+            -avd ncurses-runtime \
+            -no-window -no-audio -no-boot-anim -no-snapshot \
+            -gpu swiftshader_indirect -no-metrics \
+            > "$log" 2>&1 &
+          emulator_pid=$!
+          printf 'emulator_pid=%s\n' "$emulator_pid"
+
+          adb_ready=0
+          for attempt in $(seq 1 60); do
+            if ! kill -0 "$emulator_pid" 2>/dev/null; then
+              echo 'emulator exited before ADB became ready' >&2
+              cat "$log" >&2
+              exit 1
+            fi
+            if [ "$(adb get-state 2>/dev/null || true)" = device ]; then
+              adb_ready=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$adb_ready" -ne 1 ]; then
+            echo 'ADB device did not appear' >&2
+            cat "$log" >&2
+            exit 1
+          fi
+
+          boot_ready=0
+          for attempt in $(seq 1 90); do
+            if [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]; then
+              boot_ready=1
+              break
+            fi
+            if ! kill -0 "$emulator_pid" 2>/dev/null; then
+              echo 'emulator exited before Android completed boot' >&2
+              cat "$log" >&2
+              exit 1
+            fi
+            sleep 2
+          done
+          if [ "$boot_ready" -ne 1 ]; then
+            echo 'Android did not complete boot' >&2
+            cat "$log" >&2
+            exit 1
+          fi
+
+          test "$(adb shell getprop ro.kernel.qemu | tr -d '\r')" = 1
+          adb shell getprop ro.build.fingerprint
+          adb shell getprop ro.product.cpu.abilist
+
+      - name: Execute exact bundle and retain runtime receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote=/data/local/tmp/ncurses-runtime
+          adb shell "rm -rf '$remote' && mkdir -p '$remote'"
+          adb push _/bionic-validation/x86_64/bundle/. "$remote/"
+          adb shell "chmod 700 '$remote/modern_core_smoke' '$remote/run.sh'"
+          adb shell "cd '$remote' && sh ./run.sh emulator" | tee emulator-run.txt
+          receipt_dir=$(sed -n 's/^receipt_directory=//p' emulator-run.txt | tr -d '\r' | tail -n 1)
+          test -n "$receipt_dir"
+          mkdir emulator-receipt
+          adb pull "$receipt_dir/." emulator-receipt/
+          grep -qx 'android_pty_runtime=pass' emulator-receipt/runtime-receipt.txt
+          grep -qx 'context_operator_declared=emulator' emulator-receipt/context.txt
+          grep -qx 'ro.kernel.qemu=1' emulator-receipt/context.txt
+
+      - name: Retain emulator evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ncurses-android-emulator-${{ github.run_id }}
+          path: |
+            emulator-run.txt
+            emulator-receipt/
+            _/bionic-validation/x86_64/bundle/build-receipt.txt
+            _/bionic-validation/x86_64/bundle/executable-elf.txt
+            _/bionic-validation/x86_64/bundle/SHA256SUMS
+            ${{ runner.temp }}/emulator.log
+            ${{ runner.temp }}/emulator-accel.txt
+            ${{ runner.temp }}/emulator-avds.txt
+          if-no-files-found: warn
+
+      - name: Record acceptance boundary
+        if: always()
+        shell: bash
+        run: |
+          printf '%s\n' \
+            'host: GitHub-hosted Ubuntu 24.04 x86-64' \
+            'runtime: Android emulator / Bionic x86_64' \
+            'scope: private PTY runtime harness' \
+            'physical-device acceptance: NOT ESTABLISHED' \
+            'interactive terminal acceptance: NOT ESTABLISHED'

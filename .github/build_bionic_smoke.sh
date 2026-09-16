@@ -7,11 +7,12 @@ if [ -n "${GITHUB_WORKSPACE:-}" ] && [ -f "$GITHUB_WORKSPACE/_/configure" ]; the
 else
   root=$(cd "$script_dir/.." && pwd)
 fi
-abi=${1:?usage: bash .github/build_bionic_smoke.sh armv7a|aarch64}
+abi=${1:?usage: bash .github/build_bionic_smoke.sh armv7a|aarch64|x86_64}
 api=24
 case "$abi" in
   armv7a) target=armv7a-linux-androideabi; host=arm-linux-androideabi; machine=ARM; class=ELF32; loader=/system/bin/linker ;;
   aarch64) target=aarch64-linux-android; host=$target; machine=AArch64; class=ELF64; loader=/system/bin/linker64 ;;
+  x86_64) target=x86_64-linux-android; host=$target; machine='Advanced Micro Devices X86-64'; class=ELF64; loader=/system/bin/linker64 ;;
   *) echo "unsupported ABI: $abi" >&2; exit 2 ;;
 esac
 # Select the installed NDK explicitly. Record and check its exact revision,
@@ -24,7 +25,7 @@ revision=$(sed -n 's/^Pkg.Revision[[:space:]]*=[[:space:]]*//p' "$ndk/source.pro
 [ "$revision" = "$EXPECTED_NDK_REVISION" ] || { echo "NDK revision mismatch: $revision" >&2; exit 1; }
 for program in clang llvm-ar llvm-ranlib llvm-strip llvm-readelf llvm-nm; do test -x "$tools/$program"; done
 for program in cc make tic python3 git sha256sum; do command -v "$program" >/dev/null; done
-# Prefer the checkout's Git identity and cleanliness check.  Job containers may
+# Prefer the checkout's Git identity and cleanliness check. Job containers may
 # expose the exact checked-out workspace without its Git metadata; in that case
 # the workflow must pass the exact checkout ref explicitly as SOURCE_COMMIT.
 if git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
