@@ -16,20 +16,24 @@ jobs:
     timeout-minutes: 35
     env:
       EXPECTED_NDK_REVISION: 27.3.13750724
-      NDK_ARCHIVE_SHA1: 22105e410cf29afcf163760cc95522b9fb981121
       SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
       SYSTEM_IMAGE: system-images;android-34;default;x86_64
     steps:
-      - name: Verify Ubuntu execution environment
+      - name: Verify Ubuntu and Android SDK environment
         shell: bash
         run: |
           set -eu
           . /etc/os-release
           test "$ID" = ubuntu
           test "$(uname -m)" = x86_64
-          command -v sdkmanager
-          command -v avdmanager
-          command -v adb
+          test "$ANDROID_HOME" = /usr/local/lib/android/sdk
+          test -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager"
+          test -x "$ANDROID_HOME/platform-tools/adb"
+          printf '%s\n' \
+            "$ANDROID_HOME/cmdline-tools/latest/bin" \
+            "$ANDROID_HOME/platform-tools" \
+            "$ANDROID_HOME/emulator" >> "$GITHUB_PATH"
 
       - name: Install build prerequisites
         shell: bash
@@ -37,21 +41,15 @@ jobs:
           set -eux
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            build-essential ca-certificates curl git ncurses-bin python3 unzip
+            build-essential ncurses-bin python3
 
-      - name: Install pinned Android NDK r27d
+      - name: Verify pinned Android NDK r27d
         shell: bash
         run: |
           set -eux
-          archive="$RUNNER_TEMP/android-ndk-r27d-linux.zip"
-          curl --fail --location --retry 3 \
-            https://dl.google.com/android/repository/android-ndk-r27d-linux.zip \
-            --output "$archive"
-          printf '%s  %s\n' "$NDK_ARCHIVE_SHA1" "$archive" | sha1sum -c -
-          unzip -q "$archive" -d "$RUNNER_TEMP"
-          rm "$archive"
-          grep -F 'Pkg.Revision = 27.3.13750724' "$RUNNER_TEMP/android-ndk-r27d/source.properties"
-          printf 'ANDROID_NDK_HOME=%s/android-ndk-r27d\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          test -n "$ANDROID_NDK_HOME"
+          grep -F 'Pkg.Revision = 27.3.13750724' "$ANDROID_NDK_HOME/source.properties"
+          test -x "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
 
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -67,8 +65,8 @@ jobs:
         run: |
           set -eux
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager 'platform-tools' 'emulator' "$SYSTEM_IMAGE"
-          command -v emulator
+          sdkmanager 'emulator' "$SYSTEM_IMAGE"
+          test -x "$ANDROID_HOME/emulator/emulator"
           echo no | avdmanager create avd --force \
             --name ncurses-runtime \
             --package "$SYSTEM_IMAGE" \
