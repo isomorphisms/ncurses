@@ -45,7 +45,7 @@ At exact PR #3 head `839e98129b17d54e9442f6679bb3840328de5b49`, the current Bion
 
 The jobs use Android NDK `27.3.13750724`.  They verify the target archive members and the linked executable's ELF class/machine, PIE/interpreter/dependencies, bundle checksums, and exact-source provenance.
 
-This is **Android/Bionic build/link evidence for ARMv7a and AArch64**.  Those ARM bundles have not been executed on Android by these receipts.
+This is **Android/Bionic build/link evidence for ARMv7a and AArch64**.  Runtime evidence is recorded separately below.
 
 ## Android emulator runtime
 
@@ -66,13 +66,35 @@ The emulator artifact is `ncurses-android-emulator-35046978535` (artifact ID `10
 
 This establishes **private-PTY execution on that Android 14 x86_64 emulator image**.  It does not establish ARM runtime behavior or physical-device behavior.
 
+## Physical ARMv7 Android runtime
+
+After PR #4 merged, the `bionic core` workflow passed again at exact merged commit `da8525216cb37d383cfd4905611a3ddbcb46b773`.  Run `35047148164` produced the ARMv7a API 24 artifact `bionic-api24-armv7a-35047148164` (artifact ID `10427477879`).
+
+On 2026-09-17, that exact post-merge artifact was fetched from GitHub with `gh run download` and executed from native Termux on the operator's physical ARMv7 Android phone with:
+
+```sh
+sh ./run.sh physical
+```
+
+The bundle checksum verification passed for `COPYING`, build environment, build receipt, ELF report, executable, runner, and terminfo fixture.  The runtime output then recorded:
+
+- `runtime_libc=bionic`;
+- `modern_core_pty=pass`;
+- `exit_status=0`;
+- `android_pty_runtime=pass`;
+- `interactive_device_acceptance=not_established`;
+- `finished_utc=2026-09-17T09:21:00Z`.
+
+The runner wrote the device-side receipt directory under native Termux.  Device serial numbers are deliberately not part of this receipt.
+
+This establishes **physical ARMv7 Android/Bionic private-PTY execution of the exact post-merge bundle**.  It does not establish interactive terminal-app behavior, IME/keyboard behavior, or externally delivered resize behavior.
+
 ## Still unclaimed
 
 The current receipts do **not** establish:
 
-- ARMv7a runtime on Android;
 - AArch64 runtime on Android;
-- physical phone or tablet execution;
+- physical AArch64 phone or tablet execution;
 - interactive terminal-app behavior;
 - IME/on-screen-keyboard behavior;
 - genuine SIGWINCH / `KEY_RESIZE` delivery from an external window-size change;
